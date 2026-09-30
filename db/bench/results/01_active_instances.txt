@@ -13,51 +13,51 @@
 --- A) без индексов по user_id
                                                   QUERY PLAN                                                  
 --------------------------------------------------------------------------------------------------------------
- Sort  (cost=737.45..737.50 rows=23 width=41) (actual time=2.795..2.797 rows=26 loops=1)
+ Sort  (cost=735.70..735.75 rows=23 width=41) (actual time=1.587..1.588 rows=26 loops=1)
    Sort Key: created_at DESC
    Sort Method: quicksort  Memory: 26kB
-   Buffers: shared hit=422
-   ->  Seq Scan on instances  (cost=0.00..736.92 rows=23 width=41) (actual time=0.052..2.777 rows=26 loops=1)
+   Buffers: shared hit=421
+   ->  Seq Scan on instances  (cost=0.00..735.17 rows=23 width=41) (actual time=0.041..1.581 rows=26 loops=1)
          Filter: ((status <> 'terminated'::instance_status) AND (user_id = 6))
          Rows Removed by Filter: 19974
-         Buffers: shared hit=422
- Planning Time: 0.054 ms
- Execution Time: 2.807 ms
+         Buffers: shared hit=421
+ Planning Time: 0.029 ms
+ Execution Time: 1.592 ms
 (10 rows)
 
 
 --- B) только полный индекс по user_id (FK-индекс)
                                                              QUERY PLAN                                                              
 -------------------------------------------------------------------------------------------------------------------------------------
- Sort  (cost=345.93..345.99 rows=23 width=41) (actual time=0.127..0.129 rows=26 loops=1)
+ Sort  (cost=344.29..344.35 rows=23 width=41) (actual time=0.067..0.068 rows=26 loops=1)
    Sort Key: created_at DESC
    Sort Method: quicksort  Memory: 26kB
    Buffers: shared hit=156
-   ->  Bitmap Heap Scan on instances  (cost=5.70..345.41 rows=23 width=41) (actual time=0.035..0.112 rows=26 loops=1)
+   ->  Bitmap Heap Scan on instances  (cost=5.69..343.77 rows=23 width=41) (actual time=0.015..0.063 rows=26 loops=1)
          Recheck Cond: (user_id = 6)
          Filter: (status <> 'terminated'::instance_status)
          Rows Removed by Filter: 152
          Heap Blocks: exact=154
          Buffers: shared hit=156
-         ->  Bitmap Index Scan on idx_instances_user  (cost=0.00..5.69 rows=187 width=0) (actual time=0.018..0.018 rows=203 loops=1)
+         ->  Bitmap Index Scan on idx_instances_user  (cost=0.00..5.68 rows=186 width=0) (actual time=0.006..0.006 rows=203 loops=1)
                Index Cond: (user_id = 6)
                Buffers: shared hit=2
- Planning Time: 0.063 ms
- Execution Time: 0.139 ms
+ Planning Time: 0.024 ms
+ Execution Time: 0.072 ms
 (15 rows)
 
 
 --- C) с partial-индексом WHERE status <> 'terminated'
                                                                   QUERY PLAN                                                                   
 -----------------------------------------------------------------------------------------------------------------------------------------------
- Sort  (cost=77.99..78.05 rows=23 width=41) (actual time=0.024..0.025 rows=26 loops=1)
+ Sort  (cost=77.99..78.05 rows=23 width=41) (actual time=0.011..0.012 rows=26 loops=1)
    Sort Key: created_at DESC
    Sort Method: quicksort  Memory: 26kB
    Buffers: shared hit=27
-   ->  Index Scan using idx_instances_user_active on instances  (cost=0.28..77.47 rows=23 width=41) (actual time=0.005..0.016 rows=26 loops=1)
+   ->  Index Scan using idx_instances_user_active on instances  (cost=0.28..77.47 rows=23 width=41) (actual time=0.002..0.008 rows=26 loops=1)
          Index Cond: (user_id = 6)
          Buffers: shared hit=27
- Planning Time: 0.065 ms
- Execution Time: 0.034 ms
+ Planning Time: 0.026 ms
+ Execution Time: 0.015 ms
 (9 rows)
 

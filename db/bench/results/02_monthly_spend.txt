@@ -14,95 +14,95 @@
 --- A) типичный пользователь: полный скан, нет индекса и нет отсечения партиций
                                                                                     QUERY PLAN                                                                                    
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Finalize Aggregate  (cost=30978.52..30978.53 rows=1 width=32) (actual time=25.671..26.894 rows=1 loops=1)
-   Buffers: shared hit=13711 read=2012 written=3
-   ->  Gather  (cost=30978.30..30978.51 rows=2 width=32) (actual time=25.567..26.881 rows=3 loops=1)
+ Finalize Aggregate  (cost=30976.60..30976.61 rows=1 width=32) (actual time=31.615..33.091 rows=1 loops=1)
+   Buffers: shared hit=10028 read=5694 written=54
+   ->  Gather  (cost=30976.38..30976.59 rows=2 width=32) (actual time=31.544..33.087 rows=3 loops=1)
          Workers Planned: 2
          Workers Launched: 2
-         Buffers: shared hit=13711 read=2012 written=3
-         ->  Partial Aggregate  (cost=29978.30..29978.31 rows=1 width=32) (actual time=23.771..23.774 rows=1 loops=3)
-               Buffers: shared hit=13711 read=2012 written=3
-               ->  Parallel Append  (cost=0.00..29978.26 rows=16 width=9) (actual time=16.121..23.767 rows=11 loops=3)
-                     Buffers: shared hit=13711 read=2012 written=3
-                     ->  Parallel Seq Scan on usage_records_2026_09 usage_records_12  (cost=0.00..3788.72 rows=1 width=6) (actual time=7.963..7.963 rows=0 loops=1)
+         Buffers: shared hit=10028 read=5694 written=54
+         ->  Partial Aggregate  (cost=29976.38..29976.39 rows=1 width=32) (actual time=29.840..29.845 rows=1 loops=3)
+               Buffers: shared hit=10028 read=5694 written=54
+               ->  Parallel Append  (cost=0.00..29976.34 rows=16 width=9) (actual time=20.154..29.840 rows=11 loops=3)
+                     Buffers: shared hit=10028 read=5694 written=54
+                     ->  Parallel Seq Scan on usage_records_2026_09 usage_records_12  (cost=0.00..3786.80 rows=1 width=6) (actual time=8.347..8.347 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 126655
-                           Buffers: shared hit=1977
-                     ->  Parallel Seq Scan on usage_records_2026_08 usage_records_11  (cost=0.00..3058.12 rows=1 width=6) (actual time=0.017..7.284 rows=32 loops=1)
+                           Buffers: shared hit=1976
+                     ->  Parallel Seq Scan on usage_records_2026_08 usage_records_11  (cost=0.00..3058.12 rows=1 width=6) (actual time=0.016..7.308 rows=32 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 124248
                            Buffers: shared hit=1596
-                     ->  Parallel Seq Scan on usage_records_2026_07 usage_records_10  (cost=0.00..2865.67 rows=1 width=6) (actual time=6.916..6.916 rows=0 loops=1)
+                     ->  Parallel Seq Scan on usage_records_2026_07 usage_records_10  (cost=0.00..2865.67 rows=1 width=6) (actual time=7.656..7.656 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 116337
-                           Buffers: shared hit=1497
-                     ->  Parallel Seq Scan on usage_records_2026_06 usage_records_9  (cost=0.00..2693.22 rows=1 width=6) (actual time=8.958..8.958 rows=0 loops=1)
+                           Buffers: shared hit=1308 read=189
+                     ->  Parallel Seq Scan on usage_records_2026_06 usage_records_9  (cost=0.00..2693.22 rows=1 width=6) (actual time=6.656..6.656 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 109159
-                           Buffers: shared hit=2 read=1407 written=3
-                     ->  Parallel Seq Scan on usage_records_2026_05 usage_records_8  (cost=0.00..2676.64 rows=1 width=6) (actual time=6.827..6.827 rows=0 loops=1)
+                           Buffers: shared hit=1405 read=4
+                     ->  Parallel Seq Scan on usage_records_2026_05 usage_records_8  (cost=0.00..2676.64 rows=1 width=6) (actual time=8.992..8.992 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 108344
-                           Buffers: shared hit=1402
-                     ->  Parallel Seq Scan on usage_records_2026_04 usage_records_7  (cost=0.00..2486.98 rows=1 width=6) (actual time=2.448..2.448 rows=0 loops=3)
+                           Buffers: shared hit=914 read=488
+                     ->  Parallel Seq Scan on usage_records_2026_04 usage_records_7  (cost=0.00..2486.98 rows=1 width=6) (actual time=10.481..10.481 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
-                           Rows Removed by Filter: 33518
-                           Buffers: shared hit=756 read=548
-                     ->  Parallel Seq Scan on usage_records_2026_03 usage_records_6  (cost=0.00..2435.82 rows=1 width=6) (actual time=2.912..2.913 rows=0 loops=2)
+                           Rows Removed by Filter: 100553
+                           Buffers: shared hit=454 read=850
+                     ->  Parallel Seq Scan on usage_records_2026_03 usage_records_6  (cost=0.00..2435.82 rows=1 width=6) (actual time=4.745..4.745 rows=0 loops=3)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
-                           Rows Removed by Filter: 49165
-                           Buffers: shared hit=1279
-                     ->  Parallel Seq Scan on usage_records_2026_01 usage_records_4  (cost=0.00..2211.79 rows=1 width=6) (actual time=4.783..4.783 rows=0 loops=1)
+                           Rows Removed by Filter: 32777
+                           Buffers: shared hit=487 read=792 written=2
+                     ->  Parallel Seq Scan on usage_records_2026_01 usage_records_4  (cost=0.00..2211.79 rows=1 width=6) (actual time=4.324..4.324 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 88977
-                           Buffers: shared hit=1165
-                     ->  Parallel Seq Scan on usage_records_2025_12 usage_records_3  (cost=0.00..2101.56 rows=1 width=6) (actual time=4.418..4.418 rows=0 loops=1)
+                           Buffers: shared hit=1163 read=2
+                     ->  Parallel Seq Scan on usage_records_2025_12 usage_records_3  (cost=0.00..2101.56 rows=1 width=6) (actual time=4.893..4.893 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 84453
-                           Buffers: shared hit=1108
-                     ->  Parallel Seq Scan on usage_records_2026_02 usage_records_5  (cost=0.00..2029.65 rows=1 width=6) (actual time=3.980..3.980 rows=0 loops=1)
+                           Buffers: shared hit=593 read=515
+                     ->  Parallel Seq Scan on usage_records_2026_02 usage_records_5  (cost=0.00..2029.65 rows=1 width=6) (actual time=6.368..6.368 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 81825
-                           Buffers: shared hit=1048 read=19
-                     ->  Parallel Seq Scan on usage_records_2025_11 usage_records_2  (cost=0.00..1877.67 rows=1 width=6) (actual time=3.655..3.655 rows=0 loops=1)
+                           Buffers: shared read=1067 written=36
+                     ->  Parallel Seq Scan on usage_records_2025_11 usage_records_2  (cost=0.00..1877.67 rows=1 width=6) (actual time=5.196..5.196 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 75367
-                           Buffers: shared hit=991
-                     ->  Parallel Seq Scan on usage_records_2025_10 usage_records_1  (cost=0.00..1747.08 rows=1 width=6) (actual time=3.325..3.325 rows=0 loops=1)
+                           Buffers: shared hit=36 read=955 written=16
+                     ->  Parallel Seq Scan on usage_records_2025_10 usage_records_1  (cost=0.00..1747.08 rows=1 width=6) (actual time=4.578..4.578 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
                            Rows Removed by Filter: 69877
-                           Buffers: shared hit=887 read=38
-                     ->  Parallel Seq Scan on usage_records_2026_10 usage_records_13  (cost=0.00..1.75 rows=1 width=18) (actual time=0.000..0.000 rows=0 loops=1)
+                           Buffers: shared hit=96 read=829
+                     ->  Parallel Seq Scan on usage_records_2026_10 usage_records_13  (cost=0.00..1.75 rows=1 width=18) (actual time=0.146..0.146 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
-                           Buffers: shared hit=1
-                     ->  Parallel Seq Scan on usage_records_2026_12 usage_records_15  (cost=0.00..1.75 rows=1 width=18) (actual time=0.001..0.001 rows=0 loops=1)
+                           Buffers: shared read=1
+                     ->  Parallel Seq Scan on usage_records_2026_12 usage_records_15  (cost=0.00..1.75 rows=1 width=18) (actual time=0.134..0.134 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
-                           Buffers: shared hit=1
-                     ->  Parallel Seq Scan on usage_records_default usage_records_16  (cost=0.00..1.75 rows=1 width=18) (actual time=0.001..0.001 rows=0 loops=1)
+                           Buffers: shared read=1
+                     ->  Parallel Seq Scan on usage_records_default usage_records_16  (cost=0.00..1.75 rows=1 width=18) (actual time=0.185..0.185 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
-                           Buffers: shared hit=1
+                           Buffers: shared read=1
                      ->  Parallel Seq Scan on usage_records_2026_11 usage_records_14  (cost=0.00..0.00 rows=1 width=18) (actual time=0.000..0.000 rows=0 loops=1)
                            Filter: ((user_id = 71) AND (date_trunc('month'::text, (period_start AT TIME ZONE 'UTC'::text)) = '2026-08-01 00:00:00'::timestamp without time zone))
  Planning:
    Buffers: shared read=3
- Planning Time: 0.468 ms
- Execution Time: 26.920 ms
+ Planning Time: 0.440 ms
+ Execution Time: 33.119 ms
 (73 rows)
 
 
 --- B) типичный пользователь: отсечение партиций, индекса нет
                                                                                     QUERY PLAN                                                                                     
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Aggregate  (cost=3771.02..3771.03 rows=1 width=32) (actual time=7.396..7.396 rows=1 loops=1)
+ Aggregate  (cost=3771.02..3771.03 rows=1 width=32) (actual time=6.917..6.917 rows=1 loops=1)
    Buffers: shared hit=1596
-   ->  Seq Scan on usage_records_2026_08 usage_records  (cost=0.00..3770.90 rows=47 width=6) (actual time=0.009..7.392 rows=32 loops=1)
+   ->  Seq Scan on usage_records_2026_08 usage_records  (cost=0.00..3770.90 rows=47 width=6) (actual time=0.009..6.914 rows=32 loops=1)
          Filter: ((period_start >= '2026-08-01 00:00:00+00'::timestamp with time zone) AND (period_start < '2026-09-01 00:00:00+00'::timestamp with time zone) AND (user_id = 71))
          Rows Removed by Filter: 124248
          Buffers: shared hit=1596
  Planning:
    Buffers: shared hit=1
- Planning Time: 0.070 ms
- Execution Time: 7.403 ms
+ Planning Time: 0.063 ms
+ Execution Time: 6.922 ms
 (10 rows)
 
 
@@ -120,26 +120,26 @@
                Buffers: shared hit=3
  Planning:
    Buffers: shared hit=1
- Planning Time: 0.045 ms
- Execution Time: 0.017 ms
+ Planning Time: 0.043 ms
+ Execution Time: 0.016 ms
 (13 rows)
 
 
 --- D) самый тяжёлый пользователь: pruning + индекс
                                                                                          QUERY PLAN                                                                                         
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Aggregate  (cost=1244.19..1244.20 rows=1 width=32) (actual time=0.193..0.193 rows=1 loops=1)
+ Aggregate  (cost=1232.56..1232.57 rows=1 width=32) (actual time=0.182..0.182 rows=1 loops=1)
    Buffers: shared hit=529
-   ->  Bitmap Heap Scan on usage_records_2026_08 usage_records  (cost=20.60..1242.58 rows=642 width=6) (actual time=0.065..0.170 rows=615 loops=1)
+   ->  Bitmap Heap Scan on usage_records_2026_08 usage_records  (cost=20.45..1230.98 rows=630 width=6) (actual time=0.061..0.161 rows=615 loops=1)
          Recheck Cond: ((user_id = 6) AND (period_start >= '2026-08-01 00:00:00+00'::timestamp with time zone) AND (period_start < '2026-09-01 00:00:00+00'::timestamp with time zone))
          Heap Blocks: exact=523
          Buffers: shared hit=529
-         ->  Bitmap Index Scan on usage_records_2026_08_user_id_period_start_idx  (cost=0.00..20.44 rows=642 width=0) (actual time=0.036..0.036 rows=615 loops=1)
+         ->  Bitmap Index Scan on usage_records_2026_08_user_id_period_start_idx  (cost=0.00..20.29 rows=630 width=0) (actual time=0.034..0.034 rows=615 loops=1)
                Index Cond: ((user_id = 6) AND (period_start >= '2026-08-01 00:00:00+00'::timestamp with time zone) AND (period_start < '2026-09-01 00:00:00+00'::timestamp with time zone))
                Buffers: shared hit=6
  Planning:
    Buffers: shared hit=1
- Planning Time: 0.041 ms
- Execution Time: 0.196 ms
+ Planning Time: 0.039 ms
+ Execution Time: 0.185 ms
 (13 rows)
 

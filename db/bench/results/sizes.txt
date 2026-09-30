@@ -1,5 +1,5 @@
 === Размеры объектов схемы gpu_rent ===
-Время последнего сида, с: 35
+Время последнего сида, с: 37
  postgres_version | database_size 
 ------------------+---------------
  16.15 (Homebrew) | 625 MB
@@ -12,15 +12,15 @@
  usage_records     | partitioned table | 1184157 | 123 MB  | 168 MB  | 291 MB
  transactions      | table             | 1208510 | 172 MB  | 115 MB  | 287 MB
  users             | table             |    5000 | 8048 kB | 968 kB  | 9016 kB
- instance_gpus     | table             |   40658 | 3400 kB | 5352 kB | 8752 kB
- instances         | table             |   20000 | 3408 kB | 3024 kB | 6432 kB
+ instance_gpus     | table             |   40658 | 3408 kB | 5336 kB | 8744 kB
+ instances         | table             |   20000 | 3400 kB | 3024 kB | 6424 kB
  payments          | table             |   19754 | 2368 kB | 3600 kB | 5968 kB
  volumes           | table             |    2220 | 2912 kB | 896 kB  | 3808 kB
  ssh_keys          | table             |    3000 | 648 kB  | 528 kB  | 1176 kB
  mv_daily_revenue  | materialized view |    6517 | 528 kB  | 280 kB  | 808 kB
  api_keys          | table             |    1500 | 216 kB  | 240 kB  | 456 kB
+ audit_log         | table             |     195 | 168 kB  | 176 kB  | 344 kB
  instance_env_vars | table             |    1174 | 216 kB  | 88 kB   | 304 kB
- audit_log         | table             |     195 | 136 kB  | 152 kB  | 288 kB
  gpus              | table             |     392 | 80 kB   | 128 kB  | 208 kB
  gpu_prices        | table             |     144 | 48 kB   | 48 kB   | 96 kB
  templates         | table             |     133 | 56 kB   | 32 kB   | 88 kB
@@ -60,7 +60,7 @@
  idx_transactions_user_created | transactions  | 51 MB   | CREATE INDEX idx_transactions_user_created ON gpu_rent.transactions USING btree (user_id, created_at DESC, id DESC)
  uq_transactions_charge_usage  | transactions  | 36 MB   | CREATE UNIQUE INDEX uq_transactions_charge_usage ON gpu_rent.transactions USING btree (usage_id, usage_period_start) WHERE (type = 'charge'::tx_type)
  pk_transactions               | transactions  | 27 MB   | CREATE UNIQUE INDEX pk_transactions ON gpu_rent.transactions USING btree (id)
- ex_instance_gpus_no_overlap   | instance_gpus | 3336 kB | CREATE INDEX ex_instance_gpus_no_overlap ON gpu_rent.instance_gpus USING gist (gpu_id, allocated_during)
+ ex_instance_gpus_no_overlap   | instance_gpus | 3320 kB | CREATE INDEX ex_instance_gpus_no_overlap ON gpu_rent.instance_gpus USING gist (gpu_id, allocated_during)
  uq_payments_provider_id       | payments      | 1768 kB | CREATE UNIQUE INDEX uq_payments_provider_id ON gpu_rent.payments USING btree (provider, provider_payment_id)
  idx_instance_gpus_instance    | instance_gpus | 1088 kB | CREATE INDEX idx_instance_gpus_instance ON gpu_rent.instance_gpus USING btree (instance_id)
  uq_instances_id_user          | instances     | 1072 kB | CREATE UNIQUE INDEX uq_instances_id_user ON gpu_rent.instances USING btree (id, user_id)

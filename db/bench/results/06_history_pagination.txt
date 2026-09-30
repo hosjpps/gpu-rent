@@ -4,49 +4,49 @@ user_id = 6, записей в журнале = 8137, смещение стра�
 --- A) OFFSET, индекса по user_id нет
                                                                  QUERY PLAN                                                                  
 ---------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=30156.62..30162.46 rows=50 width=26) (actual time=26.445..27.528 rows=50 loops=1)
+ Limit  (cost=30152.12..30157.95 rows=50 width=26) (actual time=26.693..27.831 rows=50 loops=1)
    Buffers: shared hit=3871 read=18280
-   ->  Gather Merge  (cost=29681.99..30527.41 rows=7246 width=26) (actual time=26.035..27.423 rows=4118 loops=1)
+   ->  Gather Merge  (cost=29677.48..30507.04 rows=7110 width=26) (actual time=26.333..27.743 rows=4118 loops=1)
          Workers Planned: 2
          Workers Launched: 2
          Buffers: shared hit=3871 read=18280
-         ->  Sort  (cost=28681.96..28691.02 rows=3623 width=26) (actual time=24.643..24.697 rows=2046 loops=3)
+         ->  Sort  (cost=28677.46..28686.35 rows=3555 width=26) (actual time=24.896..24.940 rows=2044 loops=3)
                Sort Key: created_at DESC, id DESC
-               Sort Method: quicksort  Memory: 316kB
+               Sort Method: quicksort  Memory: 321kB
                Buffers: shared hit=3871 read=18280
-               Worker 0:  Sort Method: quicksort  Memory: 276kB
-               Worker 1:  Sort Method: quicksort  Memory: 269kB
-               ->  Parallel Seq Scan on transactions  (cost=0.00..28467.79 rows=3623 width=26) (actual time=0.019..24.305 rows=2712 loops=3)
+               Worker 0:  Sort Method: quicksort  Memory: 273kB
+               Worker 1:  Sort Method: quicksort  Memory: 267kB
+               ->  Parallel Seq Scan on transactions  (cost=0.00..28467.79 rows=3555 width=26) (actual time=0.024..24.551 rows=2712 loops=3)
                      Filter: (user_id = 6)
                      Rows Removed by Filter: 400124
                      Buffers: shared hit=3779 read=18280
- Planning Time: 0.040 ms
- Execution Time: 27.537 ms
+ Planning Time: 0.056 ms
+ Execution Time: 27.844 ms
 (18 rows)
 
 
 --- B) OFFSET с индексом
                                                                          QUERY PLAN                                                                          
 -------------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=11753.63..11898.09 rows=50 width=26) (actual time=0.832..0.846 rows=50 loops=1)
+ Limit  (cost=11801.16..11946.20 rows=50 width=26) (actual time=0.817..0.830 rows=50 loops=1)
    Buffers: shared hit=3647
-   ->  Index Scan using idx_transactions_user_created on transactions  (cost=0.43..25121.90 rows=8695 width=26) (actual time=0.003..0.764 rows=4118 loops=1)
+   ->  Index Scan using idx_transactions_user_created on transactions  (cost=0.43..24747.73 rows=8531 width=26) (actual time=0.003..0.748 rows=4118 loops=1)
          Index Cond: (user_id = 6)
          Buffers: shared hit=3647
- Planning Time: 0.022 ms
- Execution Time: 0.850 ms
+ Planning Time: 0.021 ms
+ Execution Time: 0.834 ms
 (7 rows)
 
 
 --- C) keyset с индексом
                                                                         QUERY PLAN                                                                        
 ----------------------------------------------------------------------------------------------------------------------------------------------------------
- Limit  (cost=0.43..164.15 rows=50 width=26) (actual time=0.002..0.014 rows=50 loops=1)
+ Limit  (cost=0.43..164.32 rows=50 width=26) (actual time=0.002..0.015 rows=50 loops=1)
    Buffers: shared hit=43
-   ->  Index Scan using idx_transactions_user_created on transactions  (cost=0.43..8084.89 rows=2469 width=26) (actual time=0.002..0.013 rows=50 loops=1)
+   ->  Index Scan using idx_transactions_user_created on transactions  (cost=0.43..7975.65 rows=2433 width=26) (actual time=0.002..0.012 rows=50 loops=1)
          Index Cond: ((user_id = 6) AND (ROW(created_at, id) < ROW('2026-02-07 02:21:52+00'::timestamp with time zone, 342092)))
          Buffers: shared hit=43
- Planning Time: 0.015 ms
+ Planning Time: 0.016 ms
  Execution Time: 0.018 ms
 (7 rows)
 
