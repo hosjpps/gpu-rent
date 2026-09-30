@@ -1,0 +1,309 @@
+=== (д) Каталог v_gpu_availability ===
+ allocations_total | allocations_open 
+-------------------+------------------
+             40658 |              187
+(1 row)
+
+ partial_index_size | gist_exclude_index_size 
+--------------------+-------------------------
+ 16 kB              | 3336 kB
+(1 row)
+
+
+--- A) без partial-индекса: весь каталог
+                                                                                  QUERY PLAN                                                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Hash Right Join  (cost=1273.20..1273.59 rows=1 width=128) (actual time=2.262..2.270 rows=18 loops=1)
+   Hash Cond: ((gpu_prices.datacenter_id = c.datacenter_id) AND (gpu_prices.gpu_model_id = c.gpu_model_id))
+   Buffers: shared hit=432
+   ->  HashAggregate  (cost=4.70..4.84 rows=14 width=80) (actual time=0.027..0.028 rows=18 loops=1)
+         Group Key: gpu_prices.datacenter_id, gpu_prices.gpu_model_id
+         Batches: 1  Memory Usage: 24kB
+         Buffers: shared hit=2
+         ->  Seq Scan on gpu_prices  (cost=0.00..4.16 rows=36 width=26) (actual time=0.002..0.012 rows=36 loops=1)
+               Filter: (valid_during @> now())
+               Rows Removed by Filter: 108
+               Buffers: shared hit=2
+   ->  Hash  (cost=1268.48..1268.48 rows=1 width=80) (actual time=2.234..2.235 rows=18 loops=1)
+         Buckets: 1024  Batches: 1  Memory Usage: 11kB
+         Buffers: shared hit=430
+         ->  Merge Join  (cost=1268.42..1268.48 rows=1 width=80) (actual time=2.228..2.232 rows=18 loops=1)
+               Merge Cond: (c.gpu_model_id = m.id)
+               Buffers: shared hit=430
+               ->  Sort  (cost=1267.28..1267.29 rows=4 width=62) (actual time=2.225..2.226 rows=18 loops=1)
+                     Sort Key: c.gpu_model_id
+                     Sort Method: quicksort  Memory: 26kB
+                     Buffers: shared hit=429
+                     ->  Merge Join  (cost=1267.06..1267.24 rows=4 width=62) (actual time=2.220..2.223 rows=18 loops=1)
+                           Merge Cond: (c.datacenter_id = d.id)
+                           Buffers: shared hit=429
+                           ->  Sort  (cost=1265.98..1266.04 rows=24 width=48) (actual time=2.215..2.216 rows=18 loops=1)
+                                 Sort Key: c.datacenter_id
+                                 Sort Method: quicksort  Memory: 26kB
+                                 Buffers: shared hit=428
+                                 ->  Subquery Scan on c  (cost=1264.95..1265.43 rows=24 width=48) (actual time=2.210..2.213 rows=18 loops=1)
+                                       Buffers: shared hit=428
+                                       ->  HashAggregate  (cost=1264.95..1265.19 rows=24 width=48) (actual time=2.210..2.212 rows=18 loops=1)
+                                             Group Key: n.datacenter_id, g.gpu_model_id
+                                             Batches: 1  Memory Usage: 24kB
+                                             Buffers: shared hit=428
+                                             ->  Hash Join  (cost=21.58..1026.66 rows=13617 width=29) (actual time=2.054..2.165 rows=392 loops=1)
+                                                   Hash Cond: (g.node_id = n.id)
+                                                   Buffers: shared hit=428
+                                                   ->  Hash Right Join  (cost=19.23..986.88 rows=13617 width=25) (actual time=2.042..2.112 rows=392 loops=1)
+                                                         Hash Cond: (ig.gpu_id = g.id)
+                                                         Buffers: shared hit=427
+                                                         ->  Seq Scan on instance_gpus ig  (cost=0.00..931.65 rows=13617 width=16) (actual time=1.991..2.031 rows=187 loops=1)
+                                                               Filter: upper_inf(allocated_during)
+                                                               Rows Removed by Filter: 40471
+                                                               Buffers: shared hit=421
+                                                         ->  Hash  (cost=11.88..11.88 rows=588 width=25) (actual time=0.050..0.050 rows=392 loops=1)
+                                                               Buckets: 1024  Batches: 1  Memory Usage: 33kB
+                                                               Buffers: shared hit=6
+                                                               ->  Seq Scan on gpus g  (cost=0.00..11.88 rows=588 width=25) (actual time=0.002..0.026 rows=392 loops=1)
+                                                                     Buffers: shared hit=6
+                                                   ->  Hash  (cost=1.60..1.60 rows=60 width=20) (actual time=0.010..0.010 rows=60 loops=1)
+                                                         Buckets: 1024  Batches: 1  Memory Usage: 12kB
+                                                         Buffers: shared hit=1
+                                                         ->  Seq Scan on nodes n  (cost=0.00..1.60 rows=60 width=20) (actual time=0.003..0.006 rows=60 loops=1)
+                                                               Buffers: shared hit=1
+                           ->  Sort  (cost=1.08..1.09 rows=4 width=14) (actual time=0.003..0.004 rows=4 loops=1)
+                                 Sort Key: d.id
+                                 Sort Method: quicksort  Memory: 25kB
+                                 Buffers: shared hit=1
+                                 ->  Seq Scan on datacenters d  (cost=0.00..1.04 rows=4 width=14) (actual time=0.002..0.002 rows=4 loops=1)
+                                       Filter: is_active
+                                       Buffers: shared hit=1
+               ->  Sort  (cost=1.14..1.15 rows=6 width=18) (actual time=0.003..0.003 rows=6 loops=1)
+                     Sort Key: m.id
+                     Sort Method: quicksort  Memory: 25kB
+                     Buffers: shared hit=1
+                     ->  Seq Scan on gpu_models m  (cost=0.00..1.06 rows=6 width=18) (actual time=0.001..0.002 rows=6 loops=1)
+                           Buffers: shared hit=1
+ Planning:
+   Buffers: shared hit=13
+ Planning Time: 0.281 ms
+ Execution Time: 2.298 ms
+(71 rows)
+
+
+--- B) с partial-индексом: весь каталог
+                                                                                            QUERY PLAN                                                                                             
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Hash Right Join  (cost=945.24..945.63 rows=1 width=128) (actual time=0.234..0.242 rows=18 loops=1)
+   Hash Cond: ((gpu_prices.datacenter_id = c.datacenter_id) AND (gpu_prices.gpu_model_id = c.gpu_model_id))
+   Buffers: shared hit=21
+   ->  HashAggregate  (cost=4.70..4.84 rows=14 width=80) (actual time=0.019..0.020 rows=18 loops=1)
+         Group Key: gpu_prices.datacenter_id, gpu_prices.gpu_model_id
+         Batches: 1  Memory Usage: 24kB
+         Buffers: shared hit=2
+         ->  Seq Scan on gpu_prices  (cost=0.00..4.16 rows=36 width=26) (actual time=0.002..0.012 rows=36 loops=1)
+               Filter: (valid_during @> now())
+               Rows Removed by Filter: 108
+               Buffers: shared hit=2
+   ->  Hash  (cost=940.52..940.52 rows=1 width=80) (actual time=0.214..0.215 rows=18 loops=1)
+         Buckets: 1024  Batches: 1  Memory Usage: 11kB
+         Buffers: shared hit=19
+         ->  Merge Join  (cost=940.46..940.52 rows=1 width=80) (actual time=0.209..0.212 rows=18 loops=1)
+               Merge Cond: (c.gpu_model_id = m.id)
+               Buffers: shared hit=19
+               ->  Sort  (cost=939.32..939.33 rows=4 width=62) (actual time=0.206..0.207 rows=18 loops=1)
+                     Sort Key: c.gpu_model_id
+                     Sort Method: quicksort  Memory: 26kB
+                     Buffers: shared hit=18
+                     ->  Merge Join  (cost=939.10..939.28 rows=4 width=62) (actual time=0.201..0.205 rows=18 loops=1)
+                           Merge Cond: (c.datacenter_id = d.id)
+                           Buffers: shared hit=18
+                           ->  Sort  (cost=938.02..938.08 rows=24 width=48) (actual time=0.198..0.199 rows=18 loops=1)
+                                 Sort Key: c.datacenter_id
+                                 Sort Method: quicksort  Memory: 26kB
+                                 Buffers: shared hit=17
+                                 ->  Subquery Scan on c  (cost=936.99..937.47 rows=24 width=48) (actual time=0.194..0.197 rows=18 loops=1)
+                                       Buffers: shared hit=17
+                                       ->  HashAggregate  (cost=936.99..937.23 rows=24 width=48) (actual time=0.194..0.196 rows=18 loops=1)
+                                             Group Key: n.datacenter_id, g.gpu_model_id
+                                             Batches: 1  Memory Usage: 24kB
+                                             Buffers: shared hit=17
+                                             ->  Hash Join  (cost=34.06..698.70 rows=13617 width=29) (actual time=0.062..0.144 rows=392 loops=1)
+                                                   Hash Cond: (g.node_id = n.id)
+                                                   Buffers: shared hit=17
+                                                   ->  Hash Right Join  (cost=31.71..658.92 rows=13617 width=25) (actual time=0.053..0.101 rows=392 loops=1)
+                                                         Hash Cond: (ig.gpu_id = g.id)
+                                                         Buffers: shared hit=16
+                                                         ->  Bitmap Heap Scan on instance_gpus ig  (cost=12.48..603.69 rows=13617 width=16) (actual time=0.005..0.015 rows=187 loops=1)
+                                                               Recheck Cond: upper_inf(allocated_during)
+                                                               Heap Blocks: exact=9
+                                                               Buffers: shared hit=10
+                                                               ->  Bitmap Index Scan on idx_instance_gpus_active  (cost=0.00..9.07 rows=13617 width=0) (actual time=0.003..0.003 rows=234 loops=1)
+                                                                     Buffers: shared hit=1
+                                                         ->  Hash  (cost=11.88..11.88 rows=588 width=25) (actual time=0.047..0.047 rows=392 loops=1)
+                                                               Buckets: 1024  Batches: 1  Memory Usage: 33kB
+                                                               Buffers: shared hit=6
+                                                               ->  Seq Scan on gpus g  (cost=0.00..11.88 rows=588 width=25) (actual time=0.001..0.025 rows=392 loops=1)
+                                                                     Buffers: shared hit=6
+                                                   ->  Hash  (cost=1.60..1.60 rows=60 width=20) (actual time=0.009..0.009 rows=60 loops=1)
+                                                         Buckets: 1024  Batches: 1  Memory Usage: 12kB
+                                                         Buffers: shared hit=1
+                                                         ->  Seq Scan on nodes n  (cost=0.00..1.60 rows=60 width=20) (actual time=0.002..0.005 rows=60 loops=1)
+                                                               Buffers: shared hit=1
+                           ->  Sort  (cost=1.08..1.09 rows=4 width=14) (actual time=0.002..0.003 rows=4 loops=1)
+                                 Sort Key: d.id
+                                 Sort Method: quicksort  Memory: 25kB
+                                 Buffers: shared hit=1
+                                 ->  Seq Scan on datacenters d  (cost=0.00..1.04 rows=4 width=14) (actual time=0.001..0.002 rows=4 loops=1)
+                                       Filter: is_active
+                                       Buffers: shared hit=1
+               ->  Sort  (cost=1.14..1.15 rows=6 width=18) (actual time=0.002..0.002 rows=6 loops=1)
+                     Sort Key: m.id
+                     Sort Method: quicksort  Memory: 25kB
+                     Buffers: shared hit=1
+                     ->  Seq Scan on gpu_models m  (cost=0.00..1.06 rows=6 width=18) (actual time=0.001..0.001 rows=6 loops=1)
+                           Buffers: shared hit=1
+ Planning:
+   Buffers: shared hit=13
+ Planning Time: 0.201 ms
+ Execution Time: 0.264 ms
+(73 rows)
+
+
+--- C) без partial-индекса: один ДЦ (MSK-1)
+                                                                               QUERY PLAN                                                                                
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Hash Right Join  (cost=1272.69..1273.09 rows=1 width=128) (actual time=2.135..2.141 rows=6 loops=1)
+   Hash Cond: ((gpu_prices.datacenter_id = c.datacenter_id) AND (gpu_prices.gpu_model_id = c.gpu_model_id))
+   Buffers: shared hit=443
+   ->  HashAggregate  (cost=4.70..4.84 rows=14 width=80) (actual time=0.019..0.021 rows=18 loops=1)
+         Group Key: gpu_prices.datacenter_id, gpu_prices.gpu_model_id
+         Batches: 1  Memory Usage: 24kB
+         Buffers: shared hit=2
+         ->  Seq Scan on gpu_prices  (cost=0.00..4.16 rows=36 width=26) (actual time=0.002..0.012 rows=36 loops=1)
+               Filter: (valid_during @> now())
+               Rows Removed by Filter: 108
+               Buffers: shared hit=2
+   ->  Hash  (cost=1267.98..1267.98 rows=1 width=80) (actual time=2.114..2.115 rows=6 loops=1)
+         Buckets: 1024  Batches: 1  Memory Usage: 9kB
+         Buffers: shared hit=441
+         ->  Nested Loop  (cost=1267.18..1267.98 rows=1 width=80) (actual time=2.109..2.113 rows=6 loops=1)
+               Buffers: shared hit=441
+               ->  Merge Join  (cost=1267.04..1267.18 rows=1 width=62) (actual time=2.107..2.108 rows=6 loops=1)
+                     Merge Cond: (c.datacenter_id = d.id)
+                     Buffers: shared hit=429
+                     ->  Sort  (cost=1265.98..1266.04 rows=24 width=48) (actual time=2.102..2.102 rows=7 loops=1)
+                           Sort Key: c.datacenter_id
+                           Sort Method: quicksort  Memory: 26kB
+                           Buffers: shared hit=428
+                           ->  Subquery Scan on c  (cost=1264.95..1265.43 rows=24 width=48) (actual time=2.097..2.100 rows=18 loops=1)
+                                 Buffers: shared hit=428
+                                 ->  HashAggregate  (cost=1264.95..1265.19 rows=24 width=48) (actual time=2.096..2.098 rows=18 loops=1)
+                                       Group Key: n.datacenter_id, g.gpu_model_id
+                                       Batches: 1  Memory Usage: 24kB
+                                       Buffers: shared hit=428
+                                       ->  Hash Join  (cost=21.58..1026.66 rows=13617 width=29) (actual time=1.951..2.052 rows=392 loops=1)
+                                             Hash Cond: (g.node_id = n.id)
+                                             Buffers: shared hit=428
+                                             ->  Hash Right Join  (cost=19.23..986.88 rows=13617 width=25) (actual time=1.942..2.010 rows=392 loops=1)
+                                                   Hash Cond: (ig.gpu_id = g.id)
+                                                   Buffers: shared hit=427
+                                                   ->  Seq Scan on instance_gpus ig  (cost=0.00..931.65 rows=13617 width=16) (actual time=1.893..1.932 rows=187 loops=1)
+                                                         Filter: upper_inf(allocated_during)
+                                                         Rows Removed by Filter: 40471
+                                                         Buffers: shared hit=421
+                                                   ->  Hash  (cost=11.88..11.88 rows=588 width=25) (actual time=0.047..0.047 rows=392 loops=1)
+                                                         Buckets: 1024  Batches: 1  Memory Usage: 33kB
+                                                         Buffers: shared hit=6
+                                                         ->  Seq Scan on gpus g  (cost=0.00..11.88 rows=588 width=25) (actual time=0.001..0.024 rows=392 loops=1)
+                                                               Buffers: shared hit=6
+                                             ->  Hash  (cost=1.60..1.60 rows=60 width=20) (actual time=0.009..0.009 rows=60 loops=1)
+                                                   Buckets: 1024  Batches: 1  Memory Usage: 12kB
+                                                   Buffers: shared hit=1
+                                                   ->  Seq Scan on nodes n  (cost=0.00..1.60 rows=60 width=20) (actual time=0.002..0.005 rows=60 loops=1)
+                                                         Buffers: shared hit=1
+                     ->  Sort  (cost=1.06..1.06 rows=1 width=14) (actual time=0.004..0.004 rows=1 loops=1)
+                           Sort Key: d.id
+                           Sort Method: quicksort  Memory: 25kB
+                           Buffers: shared hit=1
+                           ->  Seq Scan on datacenters d  (cost=0.00..1.05 rows=1 width=14) (actual time=0.003..0.003 rows=1 loops=1)
+                                 Filter: (is_active AND (code = 'MSK-1'::text))
+                                 Rows Removed by Filter: 3
+                                 Buffers: shared hit=1
+               ->  Index Scan using pk_gpu_models on gpu_models m  (cost=0.13..0.65 rows=1 width=18) (actual time=0.000..0.000 rows=1 loops=6)
+                     Index Cond: (id = c.gpu_model_id)
+                     Buffers: shared hit=12
+ Planning:
+   Buffers: shared hit=13
+ Planning Time: 0.208 ms
+ Execution Time: 2.162 ms
+(64 rows)
+
+
+--- D) с partial-индексом: один ДЦ (MSK-1)
+                                                                                         QUERY PLAN                                                                                          
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Hash Right Join  (cost=944.73..945.13 rows=1 width=128) (actual time=0.195..0.200 rows=6 loops=1)
+   Hash Cond: ((gpu_prices.datacenter_id = c.datacenter_id) AND (gpu_prices.gpu_model_id = c.gpu_model_id))
+   Buffers: shared hit=32
+   ->  HashAggregate  (cost=4.70..4.84 rows=14 width=80) (actual time=0.017..0.019 rows=18 loops=1)
+         Group Key: gpu_prices.datacenter_id, gpu_prices.gpu_model_id
+         Batches: 1  Memory Usage: 24kB
+         Buffers: shared hit=2
+         ->  Seq Scan on gpu_prices  (cost=0.00..4.16 rows=36 width=26) (actual time=0.002..0.011 rows=36 loops=1)
+               Filter: (valid_during @> now())
+               Rows Removed by Filter: 108
+               Buffers: shared hit=2
+   ->  Hash  (cost=940.02..940.02 rows=1 width=80) (actual time=0.176..0.177 rows=6 loops=1)
+         Buckets: 1024  Batches: 1  Memory Usage: 9kB
+         Buffers: shared hit=30
+         ->  Nested Loop  (cost=939.22..940.02 rows=1 width=80) (actual time=0.172..0.176 rows=6 loops=1)
+               Buffers: shared hit=30
+               ->  Merge Join  (cost=939.08..939.22 rows=1 width=62) (actual time=0.171..0.173 rows=6 loops=1)
+                     Merge Cond: (c.datacenter_id = d.id)
+                     Buffers: shared hit=18
+                     ->  Sort  (cost=938.02..938.08 rows=24 width=48) (actual time=0.169..0.169 rows=7 loops=1)
+                           Sort Key: c.datacenter_id
+                           Sort Method: quicksort  Memory: 26kB
+                           Buffers: shared hit=17
+                           ->  Subquery Scan on c  (cost=936.99..937.47 rows=24 width=48) (actual time=0.165..0.167 rows=18 loops=1)
+                                 Buffers: shared hit=17
+                                 ->  HashAggregate  (cost=936.99..937.23 rows=24 width=48) (actual time=0.164..0.166 rows=18 loops=1)
+                                       Group Key: n.datacenter_id, g.gpu_model_id
+                                       Batches: 1  Memory Usage: 24kB
+                                       Buffers: shared hit=17
+                                       ->  Hash Join  (cost=34.06..698.70 rows=13617 width=29) (actual time=0.057..0.124 rows=392 loops=1)
+                                             Hash Cond: (g.node_id = n.id)
+                                             Buffers: shared hit=17
+                                             ->  Hash Right Join  (cost=31.71..658.92 rows=13617 width=25) (actual time=0.048..0.086 rows=392 loops=1)
+                                                   Hash Cond: (ig.gpu_id = g.id)
+                                                   Buffers: shared hit=16
+                                                   ->  Bitmap Heap Scan on instance_gpus ig  (cost=12.48..603.69 rows=13617 width=16) (actual time=0.004..0.013 rows=187 loops=1)
+                                                         Recheck Cond: upper_inf(allocated_during)
+                                                         Heap Blocks: exact=9
+                                                         Buffers: shared hit=10
+                                                         ->  Bitmap Index Scan on idx_instance_gpus_active  (cost=0.00..9.07 rows=13617 width=0) (actual time=0.003..0.003 rows=234 loops=1)
+                                                               Buffers: shared hit=1
+                                                   ->  Hash  (cost=11.88..11.88 rows=588 width=25) (actual time=0.044..0.044 rows=392 loops=1)
+                                                         Buckets: 1024  Batches: 1  Memory Usage: 33kB
+                                                         Buffers: shared hit=6
+                                                         ->  Seq Scan on gpus g  (cost=0.00..11.88 rows=588 width=25) (actual time=0.001..0.023 rows=392 loops=1)
+                                                               Buffers: shared hit=6
+                                             ->  Hash  (cost=1.60..1.60 rows=60 width=20) (actual time=0.008..0.008 rows=60 loops=1)
+                                                   Buckets: 1024  Batches: 1  Memory Usage: 12kB
+                                                   Buffers: shared hit=1
+                                                   ->  Seq Scan on nodes n  (cost=0.00..1.60 rows=60 width=20) (actual time=0.002..0.005 rows=60 loops=1)
+                                                         Buffers: shared hit=1
+                     ->  Sort  (cost=1.06..1.06 rows=1 width=14) (actual time=0.002..0.002 rows=1 loops=1)
+                           Sort Key: d.id
+                           Sort Method: quicksort  Memory: 25kB
+                           Buffers: shared hit=1
+                           ->  Seq Scan on datacenters d  (cost=0.00..1.05 rows=1 width=14) (actual time=0.001..0.002 rows=1 loops=1)
+                                 Filter: (is_active AND (code = 'MSK-1'::text))
+                                 Rows Removed by Filter: 3
+                                 Buffers: shared hit=1
+               ->  Index Scan using pk_gpu_models on gpu_models m  (cost=0.13..0.65 rows=1 width=18) (actual time=0.000..0.000 rows=1 loops=6)
+                     Index Cond: (id = c.gpu_model_id)
+                     Buffers: shared hit=12
+ Planning:
+   Buffers: shared hit=13
+ Planning Time: 0.182 ms
+ Execution Time: 0.219 ms
+(66 rows)
+

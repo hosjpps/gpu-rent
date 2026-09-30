@@ -1,0 +1,80 @@
+=== Размеры объектов схемы gpu_rent ===
+Время последнего сида, с: 35
+ postgres_version | database_size 
+------------------+---------------
+ 16.15 (Homebrew) | 625 MB
+(1 row)
+
+
+--- Таблицы и материализованные представления (без партиций)
+      object       |       kind        |  rows   |  data   | indexes | total_size 
+-------------------+-------------------+---------+---------+---------+------------
+ usage_records     | partitioned table | 1184157 | 123 MB  | 168 MB  | 291 MB
+ transactions      | table             | 1208510 | 172 MB  | 115 MB  | 287 MB
+ users             | table             |    5000 | 8048 kB | 968 kB  | 9016 kB
+ instance_gpus     | table             |   40658 | 3400 kB | 5352 kB | 8752 kB
+ instances         | table             |   20000 | 3408 kB | 3024 kB | 6432 kB
+ payments          | table             |   19754 | 2368 kB | 3600 kB | 5968 kB
+ volumes           | table             |    2220 | 2912 kB | 896 kB  | 3808 kB
+ ssh_keys          | table             |    3000 | 648 kB  | 528 kB  | 1176 kB
+ mv_daily_revenue  | materialized view |    6517 | 528 kB  | 280 kB  | 808 kB
+ api_keys          | table             |    1500 | 216 kB  | 240 kB  | 456 kB
+ instance_env_vars | table             |    1174 | 216 kB  | 88 kB   | 304 kB
+ audit_log         | table             |     195 | 136 kB  | 152 kB  | 288 kB
+ gpus              | table             |     392 | 80 kB   | 128 kB  | 208 kB
+ gpu_prices        | table             |     144 | 48 kB   | 48 kB   | 96 kB
+ templates         | table             |     133 | 56 kB   | 32 kB   | 88 kB
+ nodes             | table             |      60 | 16 kB   | 48 kB   | 64 kB
+ gpu_models        | table             |       6 | 16 kB   | 32 kB   | 48 kB
+ datacenters       | table             |       4 | 16 kB   | 32 kB   | 48 kB
+ storage_prices    | table             |      16 | 16 kB   | 24 kB   | 40 kB
+ schema_migrations | table             |      12 | 16 kB   | 16 kB   | 32 kB
+(20 rows)
+
+
+--- Партиции usage_records
+       partition       |  rows  |    data    | indexes  | total_size 
+-----------------------+--------+------------+----------+------------
+ usage_records_2025_10 |  69877 | 7400 kB    | 10224 kB | 17 MB
+ usage_records_2025_11 |  75367 | 7928 kB    | 11 MB    | 18 MB
+ usage_records_2025_12 |  84453 | 8864 kB    | 12 MB    | 21 MB
+ usage_records_2026_01 |  88977 | 9320 kB    | 12 MB    | 22 MB
+ usage_records_2026_02 |  81825 | 8536 kB    | 11 MB    | 20 MB
+ usage_records_2026_03 |  98330 | 10232 kB   | 13 MB    | 23 MB
+ usage_records_2026_04 | 100553 | 10 MB      | 14 MB    | 24 MB
+ usage_records_2026_05 | 108344 | 11 MB      | 15 MB    | 26 MB
+ usage_records_2026_06 | 109159 | 11 MB      | 15 MB    | 26 MB
+ usage_records_2026_07 | 116337 | 12 MB      | 16 MB    | 28 MB
+ usage_records_2026_08 | 124280 | 12 MB      | 17 MB    | 30 MB
+ usage_records_2026_09 | 126655 | 15 MB      | 21 MB    | 37 MB
+ usage_records_2026_10 |      0 | 8192 bytes | 112 kB   | 120 kB
+ usage_records_2026_11 |      0 | 0 bytes    | 80 kB    | 80 kB
+ usage_records_2026_12 |      0 | 8192 bytes | 112 kB   | 120 kB
+ usage_records_default |      0 | 8192 bytes | 112 kB   | 120 kB
+(16 rows)
+
+
+--- Крупнейшие индексы
+          index_name           |  table_name   |  size   |                                                                      definition                                                                       
+-------------------------------+---------------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------
+ idx_transactions_user_created | transactions  | 51 MB   | CREATE INDEX idx_transactions_user_created ON gpu_rent.transactions USING btree (user_id, created_at DESC, id DESC)
+ uq_transactions_charge_usage  | transactions  | 36 MB   | CREATE UNIQUE INDEX uq_transactions_charge_usage ON gpu_rent.transactions USING btree (usage_id, usage_period_start) WHERE (type = 'charge'::tx_type)
+ pk_transactions               | transactions  | 27 MB   | CREATE UNIQUE INDEX pk_transactions ON gpu_rent.transactions USING btree (id)
+ ex_instance_gpus_no_overlap   | instance_gpus | 3336 kB | CREATE INDEX ex_instance_gpus_no_overlap ON gpu_rent.instance_gpus USING gist (gpu_id, allocated_during)
+ uq_payments_provider_id       | payments      | 1768 kB | CREATE UNIQUE INDEX uq_payments_provider_id ON gpu_rent.payments USING btree (provider, provider_payment_id)
+ idx_instance_gpus_instance    | instance_gpus | 1088 kB | CREATE INDEX idx_instance_gpus_instance ON gpu_rent.instance_gpus USING btree (instance_id)
+ uq_instances_id_user          | instances     | 1072 kB | CREATE UNIQUE INDEX uq_instances_id_user ON gpu_rent.instances USING btree (id, user_id)
+ pk_instance_gpus              | instance_gpus | 912 kB  | CREATE UNIQUE INDEX pk_instance_gpus ON gpu_rent.instance_gpus USING btree (id)
+ pk_instances                  | instances     | 864 kB  | CREATE UNIQUE INDEX pk_instances ON gpu_rent.instances USING btree (id)
+ idx_payments_user_created     | payments      | 760 kB  | CREATE INDEX idx_payments_user_created ON gpu_rent.payments USING btree (user_id, created_at DESC)
+ uq_payments_id_user           | payments      | 624 kB  | CREATE UNIQUE INDEX uq_payments_id_user ON gpu_rent.payments USING btree (id, user_id)
+ uq_users_email                | users         | 616 kB  | CREATE UNIQUE INDEX uq_users_email ON gpu_rent.users USING btree (email)
+(12 rows)
+
+
+--- BRIN против btree на одной и той же колонке period_start (партиция 2026_08)
+ brin_period_start | btree_user_period 
+-------------------+-------------------
+ 24 kB             | 3672 kB
+(1 row)
+

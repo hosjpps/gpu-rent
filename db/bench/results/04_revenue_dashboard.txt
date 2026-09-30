@@ -1,0 +1,212 @@
+=== (г) Дашборд выручки: сырые usage_records против mv_daily_revenue ===
+ usage_rows | mv_rows 
+------------+---------
+    1184157 |    6517
+(1 row)
+
+
+--- A) сырые данные, сентябрь 2026
+                                                                                                            QUERY PLAN                                                                                                             
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate  (cost=7833.31..7840.11 rows=24 width=80) (actual time=17.649..18.608 rows=18 loops=1)
+   Group Key: n.datacenter_id, i.gpu_model_id
+   Buffers: shared hit=3395
+   ->  Gather Merge  (cost=7833.31..7838.91 rows=48 width=80) (actual time=17.641..18.564 rows=54 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=3395
+         ->  Sort  (cost=6833.28..6833.34 rows=24 width=80) (actual time=16.154..16.156 rows=18 loops=3)
+               Sort Key: n.datacenter_id, i.gpu_model_id
+               Sort Method: quicksort  Memory: 28kB
+               Buffers: shared hit=3395
+               Worker 0:  Sort Method: quicksort  Memory: 28kB
+               Worker 1:  Sort Method: quicksort  Memory: 28kB
+               ->  Partial HashAggregate  (cost=6832.37..6832.73 rows=24 width=80) (actual time=16.138..16.143 rows=18 loops=3)
+                     Group Key: n.datacenter_id, i.gpu_model_id
+                     Batches: 1  Memory Usage: 32kB
+                     Buffers: shared hit=3377
+                     Worker 0:  Batches: 1  Memory Usage: 32kB
+                     Worker 1:  Batches: 1  Memory Usage: 32kB
+                     ->  Hash Join  (cost=896.74..6488.71 rows=22911 width=29) (actual time=3.279..12.043 rows=22543 loops=3)
+                           Hash Cond: (i.node_id = n.id)
+                           Buffers: shared hit=3377
+                           ->  Hash Join  (cost=894.39..6421.97 rows=22911 width=29) (actual time=3.248..10.286 rows=22543 loops=3)
+                                 Hash Cond: (u.instance_id = i.id)
+                                 Buffers: shared hit=3368
+                                 ->  Parallel Append  (cost=0.00..5438.47 rows=33942 width=27) (actual time=0.108..5.108 rows=22543 loops=3)
+                                       Buffers: shared hit=2072
+                                       ->  Parallel Bitmap Heap Scan on usage_records_2026_08 u_1  (cost=12.10..1706.51 rows=152 width=27) (actual time=0.317..0.363 rows=256 loops=1)
+                                             Recheck Cond: ((period_start >= '2026-08-31 21:00:00+00'::timestamp with time zone) AND (period_start < '2026-09-30 21:00:00+00'::timestamp with time zone))
+                                             Rows Removed by Index Recheck: 4136
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 257
+                                             Buffers: shared hit=95
+                                             ->  Bitmap Index Scan on usage_records_2026_08_period_start_idx  (cost=0.00..12.03 rows=9560 width=0) (actual time=0.039..0.039 rows=600 loops=1)
+                                                   Index Cond: ((period_start >= '2026-08-31 21:00:00+00'::timestamp with time zone) AND (period_start < '2026-09-30 21:00:00+00'::timestamp with time zone))
+                                                   Buffers: shared hit=35
+                                       ->  Parallel Seq Scan on usage_records_2026_09 u_2  (cost=0.00..3562.25 rows=47766 width=27) (actual time=0.004..4.124 rows=22458 loops=3)
+                                             Filter: ((period_start >= '2026-08-31 21:00:00+00'::timestamp with time zone) AND (period_start < '2026-09-30 21:00:00+00'::timestamp with time zone) AND (kind = 'gpu'::usage_kind))
+                                             Rows Removed by Filter: 19760
+                                             Buffers: shared hit=1977
+                                 ->  Hash  (cost=631.95..631.95 rows=20995 width=34) (actual time=3.116..3.116 rows=20000 loops=3)
+                                       Buckets: 32768  Batches: 1  Memory Usage: 1663kB
+                                       Buffers: shared hit=1266
+                                       ->  Seq Scan on instances i  (cost=0.00..631.95 rows=20995 width=34) (actual time=0.015..1.690 rows=20000 loops=3)
+                                             Buffers: shared hit=1266
+                           ->  Hash  (cost=1.60..1.60 rows=60 width=16) (actual time=0.025..0.025 rows=60 loops=3)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 11kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on nodes n  (cost=0.00..1.60 rows=60 width=16) (actual time=0.017..0.020 rows=60 loops=3)
+                                       Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=12
+ Planning Time: 0.243 ms
+ Execution Time: 18.635 ms
+(54 rows)
+
+
+--- B) mv_daily_revenue, сентябрь 2026
+                                                             QUERY PLAN                                                              
+-------------------------------------------------------------------------------------------------------------------------------------
+ HashAggregate  (cost=60.83..61.31 rows=32 width=80) (actual time=0.115..0.118 rows=18 loops=1)
+   Group Key: datacenter_id, gpu_model_id
+   Batches: 1  Memory Usage: 32kB
+   Buffers: shared hit=67
+   ->  Bitmap Heap Scan on mv_daily_revenue  (cost=4.62..60.50 rows=33 width=80) (actual time=0.017..0.050 rows=536 loops=1)
+         Recheck Cond: ((day >= '2026-09-01'::date) AND (day < '2026-10-01'::date))
+         Heap Blocks: exact=62
+         Buffers: shared hit=67
+         ->  Bitmap Index Scan on uq_mv_daily_revenue  (cost=0.00..4.61 rows=33 width=0) (actual time=0.014..0.014 rows=556 loops=1)
+               Index Cond: ((day >= '2026-09-01'::date) AND (day < '2026-10-01'::date))
+               Buffers: shared hit=5
+ Planning:
+   Buffers: shared hit=2
+ Planning Time: 0.015 ms
+ Execution Time: 0.124 ms
+(15 rows)
+
+
+--- C) сырые данные, весь год
+                                                                                     QUERY PLAN                                                                                     
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate  (cost=33161.57..33168.37 rows=24 width=80) (actual time=142.012..143.579 rows=18 loops=1)
+   Group Key: n.datacenter_id, i.gpu_model_id
+   Buffers: shared hit=15078 read=1968
+   ->  Gather Merge  (cost=33161.57..33167.17 rows=48 width=80) (actual time=142.004..143.541 rows=54 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=15078 read=1968
+         ->  Sort  (cost=32161.55..32161.61 rows=24 width=80) (actual time=140.226..140.230 rows=18 loops=3)
+               Sort Key: n.datacenter_id, i.gpu_model_id
+               Sort Method: quicksort  Memory: 28kB
+               Buffers: shared hit=15078 read=1968
+               Worker 0:  Sort Method: quicksort  Memory: 28kB
+               Worker 1:  Sort Method: quicksort  Memory: 28kB
+               ->  Partial HashAggregate  (cost=32160.64..32161.00 rows=24 width=80) (actual time=140.211..140.218 rows=18 loops=3)
+                     Group Key: n.datacenter_id, i.gpu_model_id
+                     Batches: 1  Memory Usage: 32kB
+                     Buffers: shared hit=15060 read=1968
+                     Worker 0:  Batches: 1  Memory Usage: 32kB
+                     Worker 1:  Batches: 1  Memory Usage: 32kB
+                     ->  Hash Join  (cost=896.74..28743.25 rows=227826 width=29) (actual time=3.483..93.233 rows=265267 loops=3)
+                           Hash Cond: (i.node_id = n.id)
+                           Buffers: shared hit=15060 read=1968
+                           ->  Hash Join  (cost=894.39..28100.61 rows=227826 width=29) (actual time=3.449..73.219 rows=265267 loops=3)
+                                 Hash Cond: (u.instance_id = i.id)
+                                 Buffers: shared hit=15051 read=1968
+                                 ->  Parallel Append  (cost=0.00..26320.10 rows=337524 width=27) (actual time=0.013..44.932 rows=265267 loops=3)
+                                       Buffers: shared hit=13755 read=1968
+                                       ->  Seq Scan on usage_records_2026_11 u_14  (cost=0.00..0.00 rows=1 width=54) (actual time=0.023..0.023 rows=0 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                       ->  Parallel Seq Scan on usage_records_2026_09 u_12  (cost=0.00..3109.32 rows=47775 width=27) (actual time=0.005..10.656 rows=67374 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 59281
+                                             Buffers: shared hit=1977
+                                       ->  Parallel Seq Scan on usage_records_2026_08 u_11  (cost=0.00..2509.82 rows=39743 width=27) (actual time=0.005..10.373 rows=67583 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 56697
+                                             Buffers: shared hit=1596
+                                       ->  Parallel Seq Scan on usage_records_2026_07 u_10  (cost=0.00..2352.42 rows=38532 width=27) (actual time=0.004..9.914 rows=65380 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 50957
+                                             Buffers: shared hit=1497
+                                       ->  Parallel Seq Scan on usage_records_2026_06 u_9  (cost=0.00..2211.64 rows=38411 width=27) (actual time=0.005..9.751 rows=65168 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 43991
+                                             Buffers: shared hit=1289 read=120
+                                       ->  Parallel Seq Scan on usage_records_2026_05 u_8  (cost=0.00..2198.65 rows=39845 width=27) (actual time=0.004..10.555 rows=68177 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 40167
+                                             Buffers: shared hit=515 read=887
+                                       ->  Parallel Seq Scan on usage_records_2026_04 u_7  (cost=0.00..2043.36 rows=39328 width=27) (actual time=0.004..9.136 rows=66705 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 33848
+                                             Buffers: shared hit=1304
+                                       ->  Parallel Seq Scan on usage_records_2026_03 u_6  (cost=0.00..2002.01 rows=40352 width=27) (actual time=0.013..3.033 rows=22871 loops=3)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 9906
+                                             Buffers: shared hit=850 read=429
+                                       ->  Parallel Seq Scan on usage_records_2026_01 u_4  (cost=0.00..1819.24 rows=40729 width=27) (actual time=0.021..4.282 rows=34482 loops=2)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 10006
+                                             Buffers: shared hit=633 read=532
+                                       ->  Parallel Seq Scan on usage_records_2025_12 u_3  (cost=0.00..1728.98 rows=40821 width=27) (actual time=0.002..7.167 rows=69140 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 15313
+                                             Buffers: shared hit=1108
+                                       ->  Parallel Seq Scan on usage_records_2026_02 u_5  (cost=0.00..1668.65 rows=34901 width=27) (actual time=0.003..6.639 rows=59572 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 22253
+                                             Buffers: shared hit=1067
+                                       ->  Parallel Seq Scan on usage_records_2025_11 u_2  (cost=0.00..1545.17 rows=38372 width=27) (actual time=0.002..6.454 rows=65227 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 10140
+                                             Buffers: shared hit=991
+                                       ->  Parallel Seq Scan on usage_records_2025_10 u_1  (cost=0.00..1438.80 rows=37687 width=27) (actual time=0.002..6.021 rows=63900 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Rows Removed by Filter: 5977
+                                             Buffers: shared hit=925
+                                       ->  Parallel Seq Scan on usage_records_2026_10 u_13  (cost=0.00..1.47 rows=1 width=54) (actual time=0.001..0.001 rows=0 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Buffers: shared hit=1
+                                       ->  Parallel Seq Scan on usage_records_2026_12 u_15  (cost=0.00..1.47 rows=1 width=54) (actual time=0.001..0.001 rows=0 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Buffers: shared hit=1
+                                       ->  Parallel Seq Scan on usage_records_default u_16  (cost=0.00..1.47 rows=1 width=54) (actual time=0.001..0.001 rows=0 loops=1)
+                                             Filter: (kind = 'gpu'::usage_kind)
+                                             Buffers: shared hit=1
+                                 ->  Hash  (cost=631.95..631.95 rows=20995 width=34) (actual time=3.411..3.411 rows=20000 loops=3)
+                                       Buckets: 32768  Batches: 1  Memory Usage: 1663kB
+                                       Buffers: shared hit=1266
+                                       ->  Seq Scan on instances i  (cost=0.00..631.95 rows=20995 width=34) (actual time=0.014..1.837 rows=20000 loops=3)
+                                             Buffers: shared hit=1266
+                           ->  Hash  (cost=1.60..1.60 rows=60 width=16) (actual time=0.028..0.028 rows=60 loops=3)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 11kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on nodes n  (cost=0.00..1.60 rows=60 width=16) (actual time=0.020..0.023 rows=60 loops=3)
+                                       Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=14
+ Planning Time: 0.580 ms
+ Execution Time: 143.616 ms
+(100 rows)
+
+
+--- D) mv_daily_revenue, весь год
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ HashAggregate  (cost=194.34..204.12 rows=652 width=80) (actual time=0.947..0.952 rows=18 loops=1)
+   Group Key: datacenter_id, gpu_model_id
+   Batches: 1  Memory Usage: 57kB
+   Buffers: shared hit=64
+   ->  Seq Scan on mv_daily_revenue  (cost=0.00..129.17 rows=6517 width=80) (actual time=0.001..0.197 rows=6517 loops=1)
+         Buffers: shared hit=64
+ Planning:
+   Buffers: shared hit=2
+ Planning Time: 0.010 ms
+ Execution Time: 0.957 ms
+(10 rows)
+
+
+--- Обновление витрины: REFRESH MATERIALIZED VIEW CONCURRENTLY (цена актуальности)
+Time: 514.057 ms

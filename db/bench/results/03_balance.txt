@@ -1,0 +1,54 @@
+=== (в) Баланс: SUM по журналу против users.balance ===
+ ledger_rows_of_user | sum_of_ledger | users_balance 
+---------------------+---------------+---------------
+                8137 |   491357.3936 |   491357.3936
+(1 row)
+
+
+--- A) SUM по журналу, индекса по user_id нет
+                                                                 QUERY PLAN                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=29477.07..29477.08 rows=1 width=32) (actual time=24.941..26.065 rows=1 loops=1)
+   Buffers: shared hit=6743 read=15316
+   ->  Gather  (cost=29476.85..29477.06 rows=2 width=32) (actual time=24.899..26.061 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=6743 read=15316
+         ->  Partial Aggregate  (cost=28476.85..28476.86 rows=1 width=32) (actual time=23.481..23.481 rows=1 loops=3)
+               Buffers: shared hit=6743 read=15316
+               ->  Parallel Seq Scan on transactions  (cost=0.00..28467.79 rows=3623 width=6) (actual time=0.004..23.307 rows=2712 loops=3)
+                     Filter: (user_id = 6)
+                     Rows Removed by Filter: 400124
+                     Buffers: shared hit=6743 read=15316
+ Planning Time: 0.034 ms
+ Execution Time: 26.077 ms
+(14 rows)
+
+
+--- B) SUM по журналу с индексом по user_id
+                                                                     QUERY PLAN                                                                     
+----------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=16937.00..16937.01 rows=1 width=32) (actual time=2.623..2.623 rows=1 loops=1)
+   Buffers: shared hit=6589
+   ->  Bitmap Heap Scan on transactions  (cost=255.81..16915.26 rows=8695 width=6) (actual time=0.859..2.236 rows=8137 loops=1)
+         Recheck Cond: (user_id = 6)
+         Heap Blocks: exact=6546
+         Buffers: shared hit=6589
+         ->  Bitmap Index Scan on idx_transactions_user_created  (cost=0.00..253.64 rows=8695 width=0) (actual time=0.418..0.418 rows=8137 loops=1)
+               Index Cond: (user_id = 6)
+               Buffers: shared hit=43
+ Planning Time: 0.021 ms
+ Execution Time: 2.629 ms
+(11 rows)
+
+
+--- C) users.balance (денормализация)
+                                                   QUERY PLAN                                                   
+----------------------------------------------------------------------------------------------------------------
+ Index Scan using pk_users on users  (cost=0.29..8.30 rows=1 width=7) (actual time=0.001..0.006 rows=1 loops=1)
+   Index Cond: (id = 6)
+   Buffers: shared hit=11
+ Planning Time: 0.006 ms
+ Execution Time: 0.007 ms
+(5 rows)
+
