@@ -1,0 +1,63 @@
+@startuml pr2-seq-start-instance
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam sequenceMessageAlign left
+skinparam maxMessageSize 170
+skinparam dpi 100
+hide footbox
+autonumber
+
+title Запуск инстанса (UC-08, FR-07, FR-08)
+
+actor "Клиент\n(SPA)" as C
+participant "Nginx" as N
+participant "Express:\nинстансы" as A
+database "Redis" as R
+database "PostgreSQL" as DB
+participant "Агент\nноды" as AG
+
+C -> N : POST /api/v1/instances\n{ДЦ, GPU, число, тариф,\nшаблон, диск, том, ключ, env}
+N -> A : проксирование
+A -> R : GET сессия
+R --> A : user_id, role
+A -> A : валидация тела запроса
+
+group одна транзакция БД
+  A -> DB : BEGIN; set_config('app.user_id');\nSELECT fn_start_instance(...)
+  note right of DB
+    блокировка пользователя,
+    проверка баланса, выбор GPU,
+    снимок цены, INSERT instances
+  end note
+  alt нет ноды с нужным числом GPU
+    DB --> A : ошибка NO_CAPACITY; ROLLBACK
+    A --> C : 409 Conflict
+  else баланс меньше стоимости часа
+    DB --> A : ошибка INSUFFICIENT_BALANCE; ROLLBACK
+    A --> C : 422 Unprocessable Content
+  else успех
+    DB --> A : instance_id, node_id, pending
+    A -> DB : COMMIT
+  end
+end
+
+A --> C : 201 Created {id, status: pending}
+A -> AG : POST /agent/v1/instances\n{образ, GPU-слоты, диск,\nключ, env}
+activate AG
+AG -> AG : pull образа,\ndocker run --gpus
+
+alt контейнер запущен
+  AG -> A : POST /internal/agent/status\n{instance_id, running}
+  A -> DB : UPDATE instances\nSET status = 'running',\nstarted_at = now()
+else ошибка запуска или таймаут
+  AG -> A : статус failed
+  A -> DB : status = 'failed';\nзакрыть allocated_during
+end
+deactivate AG
+
+C -> A : GET /api/v1/instances/{id}\nкаждые 3 с, пока status = pending
+A --> C : 200 OK {status: running, ssh: host:port}
+
+@enduml

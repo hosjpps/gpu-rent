@@ -1,0 +1,61 @@
+@startuml pr2-usecase-system
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+}
+skinparam dpi 100
+skinparam nodesep 18
+skinparam ranksep 40
+left to right direction
+
+title Диаграмма вариантов использования: администратор и системные акторы
+
+actor "Администратор" as ADMIN
+actor "Биллинг-планировщик\n(раз в минуту)" as SCHED
+actor "Агент ноды" as AGENT
+actor "Платёжный шлюз\n(ЮKassa)" as GATE
+
+rectangle "GPU Rent" {
+  package "Ресурсы и цены" {
+    usecase "UC-17\nУправлять ДЦ, нодами и GPU" as UC17
+    usecase "UC-18\nИзменить цену GPU" as UC18
+  }
+  package "Пользователи" {
+    usecase "UC-19\nУправлять пользователями\n(блокировка)" as UC19
+    usecase "UC-20\nПросмотреть инстансы клиента" as UC20
+  }
+  package "Аналитика и аудит" {
+    usecase "UC-21\nПросмотреть дашборд загрузки\nи выручки" as UC21
+    usecase "UC-22\nПросмотреть журнал аудита" as UC22
+    usecase "UC-26\nЗаписать действие\nв журнал аудита" as UC26
+  }
+  package "Фоновые процессы" {
+    usecase "UC-14\nВыполнить биллинг-проход" as UC14
+    usecase "UC-25\nАвтоостановить инстанс\nпри балансе ≤ 0" as UC25
+    usecase "UC-16\nОбновить статус инстанса" as UC16
+    usecase "UC-15\nПринять уведомление\nо платеже (webhook)" as UC15
+  }
+}
+
+ADMIN --> UC17
+ADMIN --> UC18
+ADMIN --> UC19
+ADMIN --> UC20
+ADMIN --> UC21
+ADMIN --> UC22
+
+UC17 ..> UC26 : <<include>>
+UC18 ..> UC26 : <<include>>
+UC19 ..> UC26 : <<include>>
+UC25 .up.> UC14 : <<extend>>
+
+SCHED --> UC14
+AGENT --> UC16
+GATE --> UC15
+
+@enduml

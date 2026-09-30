@@ -1,0 +1,56 @@
+@startuml pr2-scaling
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 14
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 13
+skinparam componentStyle uml2
+skinparam nodesep 22
+skinparam ranksep 34
+skinparam dpi 100
+
+title Целевая схема после горизонтального масштабирования
+
+component "Браузеры" as USERS
+cloud "Платёжный шлюз" as GATE
+node "Ноды с GPU\n(агенты)" as NODES
+
+component "Балансировщик: Nginx\nTLS, health-проверки" as LB
+
+package "Веб-реплики (один образ, режим web, без состояния)" as WEB {
+  component "app-1" as A1
+  component "app-2" as A2
+}
+
+component "worker (режим worker)\nбиллинг-планировщик,\nwebhook, уведомления" as WORKER
+database "Redis 7\nсессии, кэш каталога,\nочередь задач" as REDIS
+component "PgBouncer\nпул соединений" as PGB
+database "PostgreSQL 16\nprimary (запись)" as PRIMARY
+database "PostgreSQL 16\nread-реплика: каталог,\nотчёты, дашборд, analyst" as REPLICA
+database "Копии: бэкапы,\nWAL-архив" as BACKUP
+
+USERS -down-> LB : HTTPS
+GATE -down-> LB : webhook
+NODES -down-> LB : статусы
+
+LB -down-> A1
+LB -down-> A2
+A1 -down-> REDIS
+A2 -down-> REDIS
+WORKER -left-> REDIS : задачи
+
+A1 -down-> PGB : запись
+A2 -down-> PGB
+WORKER -down-> PGB
+PGB -down-> PRIMARY
+PRIMARY -right-> REPLICA : потоковая\nрепликация
+PRIMARY -down-> BACKUP
+A2 ..> REPLICA : чтение без\nстрогой свежести
+
+USERS -[hidden]right- GATE
+GATE -[hidden]right- NODES
+A1 -[hidden]right- A2
+A2 -[hidden]right- WORKER
+
+@enduml

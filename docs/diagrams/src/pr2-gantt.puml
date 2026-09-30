@@ -1,0 +1,109 @@
+@startgantt pr2-gantt
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 12
+skinparam dpi 100
+Project starts 2026-09-01
+printscale weekly zoom 1
+[1.1 Тема, роли, видение] as [T11] lasts 1 day
+[T11] starts 2026-09-01
+[1.2 Аналоги, вопросы] as [T12] lasts 2 days
+[T12] starts at [T11]'s end
+[1.3 Репозиторий, процесс] as [T13] lasts 1 day
+[T13] starts at [T12]'s end
+[1.4 Отчёт П1] as [T14] lasts 2 days
+[T14] starts at [T13]'s end
+[В1 Тема, роли, репозиторий] happens at [T14]'s end
+[2.1 Аналоги, интервью] as [T21] lasts 1 day
+[T21] starts at [T14]'s end
+[2.2 FR и NFR] as [T22] lasts 2 days
+[T22] starts at [T21]'s end
+[2.3 Прецеденты, stories] as [T23] lasts 1 day
+[T23] starts at [T22]'s end
+[2.4 WBS, график, риски] as [T24] lasts 1 day
+[T24] starts at [T23]'s end
+[2.5 Отчёт П2] as [T25] lasts 2 days
+[T25] starts at [T24]'s end
+[В2 Требования и план утверждены] happens at [T25]'s end
+[3.1 ER и логическая схема] as [T31] lasts 2 days
+[T31] starts at [T25]'s end
+[3.2 Нормализация, защита] as [T32] lasts 1 day
+[T32] starts at [T31]'s end
+[3.3 Отчёт П3] as [T33] lasts 2 days
+[T33] starts at [T32]'s end
+[3.4 Миграции схемы] as [T34] lasts 2 days
+[T34] starts at [T33]'s end
+[3.5 Функции, триггеры, RLS] as [T35] lasts 3 days
+[T35] starts at [T34]'s end
+[3.6 Seed, тесты, замеры] as [T36] lasts 2 days
+[T36] starts at [T35]'s end
+[3.7 Отчёт П4] as [T37] lasts 2 days
+[T37] starts at [T36]'s end
+[В3 Схема БД реализована и проверена] happens at [T37]'s end
+[4.1 Каркас монолита] as [T41] lasts 3 days
+[T41] starts at [T37]'s end
+[4.2 Модуль auth] as [T42] lasts 3 days
+[T42] starts at [T41]'s end
+[4.3 Модуль catalog, кэш] as [T43] lasts 3 days
+[T43] starts at [T42]'s end
+[4.4 SPA: вход, каталог] as [T44] lasts 3 days
+[T44] starts at [T43]'s end
+[4.5 Тесты и отчёт] as [T45] lasts 2 days
+[T45] starts at [T44]'s end
+[В4 Прототип 0.1: вход и каталог] happens at [T45]'s end
+[5.1 VPS, DNS, файрвол] as [T51] lasts 1 day
+[T51] starts at [T45]'s end
+[5.2 Docker Compose] as [T52] lasts 3 days
+[T52] starts at [T51]'s end
+[5.3 Nginx и TLS] as [T53] lasts 2 days
+[T53] starts at [T52]'s end
+[5.4 CI/CD] as [T54] lasts 3 days
+[T54] starts at [T53]'s end
+[5.5 Резервные копии] as [T55] lasts 2 days
+[T55] starts at [T54]'s end
+[5.6 Проверка, отчёт] as [T56] lasts 3 days
+[T56] starts at [T55]'s end
+[В5 Приложение доступно по HTTPS] happens at [T56]'s end
+[6.1 Потоки и объёмы] as [T61] lasts 2 days
+[T61] starts at [T56]'s end
+[6.2 Хранение, 152-ФЗ] as [T62] lasts 1 day
+[T62] starts at [T61]'s end
+[6.3 Ревизия модели] as [T63] lasts 2 days
+[T63] starts at [T62]'s end
+[6.4 Отчёт по данным] as [T64] lasts 2 days
+[T64] starts at [T63]'s end
+[В6 Требования к данным обновлены] happens at [T64]'s end
+[7.1 Автопартиции] as [T71] lasts 2 days
+[T71] starts at [T64]'s end
+[7.2 Ревизия индексов] as [T72] lasts 2 days
+[T72] starts at [T71]'s end
+[7.3 Миграции v2, тесты] as [T73] lasts 2 days
+[T73] starts at [T72]'s end
+[7.4 Отчёт по БД] as [T74] lasts 1 day
+[T74] starts at [T73]'s end
+[В7 БД: партиции и индексы, v2] happens at [T74]'s end
+[8.1 Проект API] as [T81] lasts 2 days
+[T81] starts at [T74]'s end
+[8.2 Ключи, шаблоны] as [T82] lasts 2 days
+[T82] starts at [T81]'s end
+[8.3 Инстансы и тома] as [T83] lasts 3 days
+[T83] starts at [T82]'s end
+[8.4 Биллинг, платежи] as [T84] lasts 3 days
+[T84] starts at [T83]'s end
+[8.5 Админ-API, аудит] as [T85] lasts 2 days
+[T85] starts at [T84]'s end
+[8.6 Тесты API, отчёт] as [T86] lasts 2 days
+[T86] starts at [T85]'s end
+[В8 REST API покрывает FR-01–FR-18] happens at [T86]'s end
+[9.1 Выкладка релиза] as [T91] lasts 2 days
+[T91] starts at [T86]'s end
+[9.2 Вторая реплика] as [T92] lasts 4 days
+[T92] starts at [T91]'s end
+[9.3 Логи и метрики] as [T93] lasts 2 days
+[T93] starts at [T92]'s end
+[9.4 Нагрузочный тест] as [T94] lasts 3 days
+[T94] starts at [T93]'s end
+[9.5 Итоговый отчёт] as [T95] lasts 3 days
+[T95] starts at [T94]'s end
+[В9 Релиз 0.9: 2 реплики, нагрузка] happens at [T95]'s end
+@endgantt

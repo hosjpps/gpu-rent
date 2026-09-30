@@ -1,0 +1,69 @@
+@startuml pr2-usecase-client
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+}
+skinparam dpi 100
+skinparam nodesep 18
+skinparam ranksep 40
+left to right direction
+
+title Диаграмма вариантов использования: гость и клиент
+
+actor "Гость" as GUEST
+actor "Клиент" as CLIENT
+actor "Платёжный шлюз\n(ЮKassa)" as GATE
+
+rectangle "GPU Rent" {
+  package "Учётная запись" {
+    usecase "UC-01\nЗарегистрироваться" as UC01
+    usecase "UC-03\nВойти и выйти" as UC03
+    usecase "UC-13\nСменить пароль" as UC13
+    usecase "UC-04\nУправлять SSH-ключами" as UC04
+    usecase "UC-05\nУправлять API-ключами" as UC05
+  }
+  package "Каталог" {
+    usecase "UC-02\nПросмотреть каталог GPU\nи цены" as UC02
+    usecase "UC-06\nПросмотреть каталог\nшаблонов" as UC06
+    usecase "UC-07\nУправлять приватными\nшаблонами" as UC07
+  }
+  package "Инстансы и тома" {
+    usecase "UC-08\nЗапустить инстанс" as UC08
+    usecase "UC-23\nПроверить баланс\nи доступность GPU" as UC23
+    usecase "UC-24\nПодключить сетевой том" as UC24
+    usecase "UC-09\nОстановить, возобновить\nили терминировать инстанс" as UC09
+    usecase "UC-10\nУправлять сетевыми\nтомами" as UC10
+  }
+  package "Баланс и отчёты" {
+    usecase "UC-11\nПополнить баланс" as UC11
+    usecase "UC-12\nПросмотреть историю операций\nи отчёт расходов" as UC12
+  }
+}
+
+CLIENT --|> GUEST
+
+GUEST --> UC01
+GUEST --> UC02
+
+CLIENT --> UC03
+CLIENT --> UC13
+CLIENT --> UC04
+CLIENT --> UC05
+CLIENT --> UC06
+CLIENT --> UC07
+CLIENT --> UC08
+CLIENT --> UC09
+CLIENT --> UC10
+CLIENT --> UC11
+CLIENT --> UC12
+
+UC08 ..> UC23 : <<include>>
+UC24 .up.> UC08 : <<extend>>
+UC11 --> GATE
+
+@enduml

@@ -1,0 +1,65 @@
+@startuml pr2-architecture
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 14
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 13
+skinparam nodesep 20
+skinparam ranksep 30
+skinparam componentStyle uml2
+skinparam dpi 100
+
+title Архитектура GPU Rent: модульный монолит
+
+component "Браузер (клиент или администратор)\nSPA: React 18, статика Vite" as BROWSER
+
+node "VPS, Docker Compose" as VPS {
+  component "Nginx: TLS 1.2+, reverse proxy,\nстатика, gzip, ограничение частоты" as NGINX
+
+  package "Контейнер app: Node.js 20 + Express 4, один процесс" as APP {
+    component "HTTP-слой Express: маршруты /api/v1, middleware\n(сессия, валидация, права, обработка ошибок)" as HTTP
+    component "auth" as M_AUTH
+    component "catalog" as M_CAT
+    component "admin\n(+ аудит)" as M_ADM
+    component "instances\n(+ тома)" as M_INST
+    component "billing" as M_BILL
+    component "payments" as M_PAY
+    component "Планировщик биллинга\n(раз в минуту)" as SCHED
+    component "Доступ к данным и интеграциям:\nпул PostgreSQL, клиент Redis,\nHTTP-клиенты" as DL
+
+    HTTP -[hidden]down- M_AUTH
+    HTTP -[hidden]down- M_CAT
+    HTTP -[hidden]down- M_ADM
+    M_AUTH -[hidden]right- M_CAT
+    M_CAT -[hidden]right- M_ADM
+    M_INST -[hidden]right- M_BILL
+    M_BILL -[hidden]right- M_PAY
+    M_AUTH -[hidden]down- M_INST
+    M_CAT -[hidden]down- M_BILL
+    M_ADM -[hidden]down- M_PAY
+    M_BILL -[hidden]down- SCHED
+    SCHED .up.> M_BILL : fn_bill_usage
+    SCHED -[hidden]down- DL
+    M_INST -[hidden]down- DL
+    M_PAY -[hidden]down- DL
+  }
+
+  database "PostgreSQL 16, схема gpu_rent\nfn_start_instance, fn_bill_usage,\nfn_topup, RLS" as PG
+  database "Redis 7\nсессии, кэш каталога" as REDIS
+}
+
+node "Ноды с GPU\nагент ноды + Docker" as NODES
+cloud "Платёжный шлюз\n(ЮKassa)" as GATE
+
+BROWSER -down-> NGINX : HTTPS
+NGINX -down-> HTTP : HTTP, /api/*
+DL -down-> PG : SQL, set_config(app.user_id)
+DL -down-> REDIS : сессии, кэш
+DL -right-> NODES : instances: start/stop,\nстатусы от агента
+DL -right-> GATE : payments: платёж,\nwebhook
+
+PG -[hidden]right- REDIS
+NODES -[hidden]down- GATE
+
+@enduml
