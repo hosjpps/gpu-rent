@@ -3,6 +3,7 @@ skinparam monochrome true
 skinparam shadowing false
 skinparam defaultFontSize 12
 skinparam dpi 100
+language ru
 Project starts 2026-09-01
 printscale weekly zoom 1
 [1.1 Тема, роли, видение] as [T11] lasts 1 day
@@ -14,7 +15,7 @@ printscale weekly zoom 1
 [1.4 Отчёт П1] as [T14] lasts 2 days
 [T14] starts at [T13]'s end
 [В1 Тема, роли, репозиторий] happens at [T14]'s end
-[2.1 Аналоги, интервью] as [T21] lasts 1 day
+[2.1 Аналоги, персоны] as [T21] lasts 1 day
 [T21] starts at [T14]'s end
 [2.2 FR и NFR] as [T22] lasts 2 days
 [T22] starts at [T21]'s end

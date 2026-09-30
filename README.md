@@ -24,8 +24,8 @@
 
 ## Стек
 
-- Сервер: Node.js 20 LTS, TypeScript, Express 4 (реализация — недели 5–6).
-- Клиент: React 18 + Vite, собирается в статику и раздаётся тем же процессом.
+- Сервер: Node.js 24 LTS, TypeScript, Express 4 (реализация — недели 5–6).
+- Клиент: React 18 + Vite, собирается в статику, которую раздаёт Nginx (Express обслуживает только `/api`).
 - СУБД: PostgreSQL 16 (`pgcrypto`, `btree_gist`, `citext`).
 - Кэш и сессии: Redis 7. Деплой: Docker Compose, Nginx, TLS.
 

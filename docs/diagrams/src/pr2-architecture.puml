@@ -17,7 +17,7 @@ component "Браузер (клиент или администратор)\nSPA:
 node "VPS, Docker Compose" as VPS {
   component "Nginx: TLS 1.2+, reverse proxy,\nстатика, gzip, ограничение частоты" as NGINX
 
-  package "Контейнер app: Node.js 20 + Express 4, один процесс" as APP {
+  package "Контейнер app: Node.js 24 + Express 4, один процесс" as APP {
     component "HTTP-слой Express: маршруты /api/v1, middleware\n(сессия, валидация, права, обработка ошибок)" as HTTP
     component "auth" as M_AUTH
     component "catalog" as M_CAT
