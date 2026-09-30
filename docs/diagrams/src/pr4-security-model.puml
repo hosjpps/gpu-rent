@@ -1,0 +1,60 @@
+@startuml pr4-security-model
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 12
+skinparam nodesep 20
+skinparam ranksep 30
+skinparam componentStyle uml2
+skinparam dpi 100
+
+title Модель безопасности БД GPU Rent:\nроли, контекст запроса и рубежи защиты
+
+component "Приложение (Express), LOGIN ∈ gpu_rent_app, sslmode=verify-full\nкаждый запрос — одна транзакция:\nBEGIN; set_config('app.user_id' | 'app.user_role' | 'app.enc_key', $n, true);\nзапросы с параметрами $1..$n; COMMIT (контекст исчезает)" as APP
+component "Планировщик и webhook\nшлюза (system)" as SYS
+component "BI аналитика\nLOGIN ∈ gpu_rent_analyst" as BI
+
+
+node "PostgreSQL 16, БД gpu_rent\nREVOKE ALL ON DATABASE FROM PUBLIC" as PG {
+
+  package "Рубеж 1. Права GRANT / REVOKE" as R1 {
+    component "gpu_rent_app: DML по нужным таблицам\nи столбцам; users.balance закрыт;\nINSERT в transactions, usage_records закрыт;\nнет DDL, UPDATE, DELETE, TRUNCATE журналов" as G_APP
+  }
+
+  package "Рубеж 2. RLS" as R2 {
+    component "10 политик на 9 таблицах:\nuser_id = fn_app_user_id()\nOR fn_app_is_admin();\nбез контекста 0 строк" as RLS
+  }
+
+  package "Рубеж 3. SECURITY DEFINER" as R3 {
+    component "fn_start_instance, fn_bill_usage,\nfn_topup, fn_env_set/get …\nSET search_path = pg_catalog,\ngpu_rent, pg_temp;\n_fn_assert_actor / _fn_assert_system;\nREVOKE EXECUTE FROM PUBLIC" as FN
+  }
+
+  package "Рубеж 4. Ограничения и триггеры\n(действуют и на владельца)" as R4 {
+    component "CHECK, FK (составные), UNIQUE, EXCLUDE;\nappend-only: transactions, usage_records,\naudit_log; balance меняет только\nfn_ledger_apply; автоматы статусов;\nаудит в audit_log" as TR
+  }
+
+  database "Таблицы схемы gpu_rent\nвладелец gpu_rent_owner" as DATA
+
+  package "Путь аналитика" as RA {
+    component "gpu_rent_analyst: SELECT\nтолько v_users_masked,\nmv_daily_revenue,\nv_gpu_availability" as G_AN
+    database "v_users_masked (email и\nФИО маскированы),\nmv_daily_revenue,\nv_gpu_availability" as VIEWS
+  }
+}
+
+APP -[hidden]right- SYS
+SYS -[hidden]right- BI
+APP --> G_APP : SELECT / DML,\nEXECUTE fn_*
+SYS --> G_APP : app.user_role =\n'system'
+G_APP --> RLS : прямой DML
+G_APP --> FN : EXECUTE
+RLS --> TR
+FN --> TR : RLS владельца\nне действует, права\nпроверяет _fn_assert_actor
+TR --> DATA
+
+BI --> G_AN
+G_AN --> VIEWS
+VIEWS ..> DATA : только маскированные\nи агрегированные данные
+
+@enduml

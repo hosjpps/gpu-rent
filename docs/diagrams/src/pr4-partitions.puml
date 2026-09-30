@@ -1,0 +1,41 @@
+@startuml pr4-partitions
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 12
+skinparam nodesep 25
+skinparam ranksep 30
+skinparam componentStyle uml2
+skinparam dpi 100
+
+title Учёт потребления: секции usage_records и денормализованный баланс
+
+component "fn_bill_usage (раз в минуту)" as BILL
+component "fn_ensure_usage_partition\n(раз в месяц)" as ENSURE
+
+package "usage_records\nPARTITION BY RANGE (period_start)" as PARENT {
+  component "2025_10 … 2026_09: 12 секций\nс данными (69 877 … 126 655 строк)\nв каждой: B-tree (user_id, period_start),\nBRIN (period_start), UNIQUE,\nтриггеры append-only" as P_DATA
+  component "2026_10 … 2026_12: 3 пустые;\ndefault: страховка, пуста" as P_EMPTY
+}
+
+package "transactions (журнал)" as TX {
+  component "INSERT charge: FK (usage_id,\nusage_period_start), UNIQUE\nWHERE type = 'charge'" as TXROW
+  component "AFTER INSERT fn_ledger_apply:\nbalance = balance + amount" as TRIG
+}
+
+database "users.balance" as BAL
+database "mv_daily_revenue" as MV
+
+BILL --> P_DATA : INSERT, секцию\nвыбирает сервер
+BILL --> TXROW : INSERT в той же\nтранзакции
+TXROW --> TRIG
+TRIG --> BAL : UPDATE только\nиз триггера
+ENSURE --> P_EMPTY : CREATE TABLE …\nPARTITION OF
+P_DATA --> MV : сумма по kind = 'gpu'
+TXROW ..> P_DATA : ссылка на запись
+P_DATA -[hidden]down- P_EMPTY
+BILL -[hidden]right- ENSURE
+
+@enduml

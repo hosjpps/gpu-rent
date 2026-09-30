@@ -1,0 +1,27 @@
+@startuml pr4-concurrent-start
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 400
+skinparam dpi 100
+hide footbox
+
+title Конкурентный запуск: два клиента претендуют на последнюю свободную GPU
+
+participant "Сессия A\n(клиент 1)" as A
+database "PostgreSQL" as DB
+participant "Сессия B\n(клиент 2)" as B
+
+A -> DB : BEGIN; fn_start_instance: FOR UPDATE\nстроки своего пользователя
+B -> DB : BEGIN; fn_start_instance: FOR UPDATE\nстроки своего пользователя
+A -> DB : SELECT … FROM gpus WHERE нет открытой аллокации\nLIMIT 1 FOR UPDATE SKIP LOCKED
+DB --> A : GPU №7 заблокирована за A
+B -> DB : тот же запрос
+DB --> B : №7 пропущена (заблокирована A), других нет:\n0 строк → ошибка GR001, ROLLBACK
+A -> DB : INSERT instances; INSERT instance_gpus [now, ∞)\nEXCLUDE (gpu_id, allocated_during) — последний рубеж (23P01)
+A -> DB : COMMIT
+DB --> A : GPU №7 занята инстансом A
+
+@enduml
