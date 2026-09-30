@@ -1,0 +1,153 @@
+@startuml pr3-er-logical-infra
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam dpi 100
+skinparam nodesep 25
+skinparam ranksep 40
+left to right direction
+hide circle
+
+title Логическая ER-модель, часть 2: инфраструктура, цены и инстансы\n(PK — первичный ключ, FK — внешний, UK — уникальный, * — NOT NULL)
+
+entity "datacenters" as datacenters {
+  * id : bigint <<PK>>
+  --
+  * code : text <<UK>>
+  * city : text
+  * is_active : boolean
+}
+
+entity "gpu_models" as gpu_models {
+  * id : bigint <<PK>>
+  --
+  * name : text <<UK>>
+  * vram_gb : smallint
+}
+
+entity "nodes" as nodes {
+  * id : bigint <<PK>>
+  --
+  * datacenter_id : bigint <<FK>>
+  * hostname : text <<UK>>
+  * status : node_status
+}
+
+entity "gpus" as gpus {
+  * id : bigint <<PK>>
+  --
+  * node_id : bigint <<FK>>
+  * gpu_model_id : bigint <<FK>>
+  * slot_index : smallint
+  * serial : text <<UK>>
+  * is_enabled : boolean
+  UK (node_id, slot_index)
+}
+
+entity "gpu_prices" as gpu_prices {
+  * id : bigint <<PK>>
+  --
+  * datacenter_id : bigint <<FK>>
+  * gpu_model_id : bigint <<FK>>
+  * pricing_type : pricing_type
+  * price_per_hour : numeric(14,4)
+  * valid_during : tstzrange
+  EXCLUDE (datacenter_id =,
+  gpu_model_id =, pricing_type =,
+  valid_during &&)
+}
+
+entity "storage_prices" as storage_prices {
+  * id : bigint <<PK>>
+  --
+  * datacenter_id : bigint <<FK>>
+  * price_per_gb_month : numeric(14,4)
+  * valid_during : tstzrange
+  EXCLUDE (datacenter_id =,
+  valid_during &&)
+}
+
+entity "templates" as templates {
+  * id : bigint <<PK>>
+  --
+  owner_id : bigint <<FK>>
+  * docker_image : text
+  * is_public : boolean
+}
+
+entity "volumes" as volumes {
+  * id : bigint <<PK>>
+  --
+  * user_id : bigint <<FK>>
+  * datacenter_id : bigint <<FK>>
+  * size_gb : integer
+  * status : volume_status
+  * last_billed_at : timestamptz
+  UK (id, user_id)
+}
+
+entity "instances" as instances {
+  * id : uuid <<PK>>
+  --
+  * user_id : bigint <<FK>>
+  * node_id : bigint <<FK>>
+  * gpu_model_id : bigint <<FK>>
+  * template_id : bigint <<FK>>
+  volume_id : bigint <<FK>>
+  ssh_key_id : bigint <<FK>>
+  * pricing_type : pricing_type
+  * gpu_count : smallint
+  * price_per_hour_snapshot : numeric(14,4)
+  * status : instance_status
+  last_billed_at : timestamptz
+  UK (id, user_id)
+}
+
+entity "instance_gpus" as instance_gpus {
+  * id : bigint <<PK>>
+  --
+  * instance_id : uuid <<FK>>
+  * gpu_id : bigint <<FK>>
+  * allocated_during : tstzrange
+  EXCLUDE (gpu_id =,
+  allocated_during &&)
+}
+
+entity "instance_env_vars" as instance_env_vars {
+  * instance_id : uuid <<PK, FK>>
+  * name : text <<PK>>
+  --
+  * value_encrypted : bytea
+}
+
+entity "users (часть 1)" as users {
+  * id : bigint <<PK>>
+}
+
+entity "ssh_keys (часть 1)" as ssh_keys {
+  * id : bigint <<PK>>
+  --
+  UK (id, user_id)
+}
+
+datacenters ||--o{ nodes
+datacenters ||--o{ gpu_prices
+datacenters ||--o{ storage_prices
+datacenters ||--o{ volumes
+gpu_models ||--o{ gpus
+gpu_models ||--o{ gpu_prices
+gpu_models ||--o{ instances
+nodes ||--o{ gpus
+nodes ||--o{ instances
+gpus ||--o{ instance_gpus
+instances ||--o{ instance_gpus
+instances ||--o{ instance_env_vars
+templates ||--o{ instances
+volumes |o--o{ instances : "volume_id,\nuser_id"
+users ||--o{ instances
+ssh_keys |o--o{ instances : "ssh_key_id, user_id\nON DELETE SET NULL"
+users ||--o{ volumes
+users |o--o{ templates : owner_id
+
+@enduml

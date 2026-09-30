@@ -1,0 +1,71 @@
+@startuml pr3-er-conceptual
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam dpi 100
+skinparam nodesep 22
+skinparam ranksep 48
+skinparam packageStyle rectangle
+left to right direction
+hide circle
+hide empty members
+
+title Концептуальная ER-модель GPU Rent\n(нотация «воронья лапка», атрибуты не показаны)
+
+package "Пользователи и деньги" {
+  entity "Пользователь" as U
+  entity "API-ключ" as AK
+  entity "SSH-ключ" as SK
+  entity "Запись\nаудита" as AU
+  entity "Платёж" as P
+  entity "Операция\nбаланса" as TX
+  entity "Запись\nпотребления" as UR
+}
+
+package "Инфраструктура" {
+  entity "Дата-центр" as DC
+  entity "Модель GPU" as GM
+  entity "Нода" as N
+  entity "GPU" as G
+  entity "Цена GPU" as GP
+  entity "Цена\nхранения" as SP
+}
+
+package "Аренда" {
+  entity "Шаблон" as T
+  entity "Том" as V
+  entity "Инстанс" as I
+  entity "Переменная\nокружения" as EV
+}
+
+U ||--o{ AK : выпускает
+U ||--o{ SK : добавляет
+U |o--o{ AU : инициирует
+U ||--o{ P : совершает
+U ||--o{ TX : "баланс"
+P |o--o| TX : зачисляется
+UR ||--o| TX : оплачивается
+
+DC ||--o{ N : содержит
+DC ||--o{ GP : "цена"
+GM ||--o{ GP : "цена"
+DC ||--o{ SP : "цена"
+N ||--o{ G : "в слотах"
+GM ||--o{ G : "тип"
+
+U ||--o{ I : арендует
+U ||--o{ V : владеет
+U |o--o{ T : "владеет\n(приватный)"
+T ||--o{ I : "образец"
+V |o--o{ I : "подключён"
+SK |o--o{ I : "ключ запуска\n(0..1, SET NULL)"
+I ||--o{ EV : "секреты"
+I }o--o{ G : "занимает"
+I ||--o{ UR : "учёт GPU"
+V ||--o{ UR : "учёт хранения"
+DC ||--o{ V : размещает
+N ||--o{ I : "запущен на"
+GM ||--o{ I : "модель"
+
+@enduml

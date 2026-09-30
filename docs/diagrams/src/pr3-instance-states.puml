@@ -1,0 +1,50 @@
+@startuml pr3-instance-states
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 14
+skinparam roundcorner 10
+skinparam ArrowFontSize 12
+skinparam dpi 100
+skinparam nodesep 40
+skinparam ranksep 50
+hide empty description
+
+title Жизненный цикл инстанса (instances.status, FR-08)
+
+state "pending\n(резерв)" as pending
+state "running" as running
+state "stopped" as stopped
+state "failed\n(резерв)" as failed
+state "terminated" as terminated
+
+running : GPU выделены (instance_gpus открыта)
+running : идёт списание раз в минуту
+stopped : GPU освобождены, списания за GPU нет
+stopped : тома продолжают тарифицироваться
+terminated : необратимое состояние
+terminated : аллокации закрыты
+
+[*] --> running : fn_start_instance:\nпроверки, снимок цены,\nвыделение GPU
+[*] --> pending : запись создана, запуск\nне подтверждён агентом
+
+pending --> running : агент подтвердил запуск
+pending --> failed : ошибка запуска
+pending --> terminated : fn_terminate_instance
+
+running --> stopped : fn_stop_instance\nили автостоп при балансе <= 0
+stopped --> running : fn_resume_instance:\nновые GPU, новый снимок цены
+running --> failed : сбой на ноде
+running --> terminated : fn_terminate_instance
+stopped --> terminated : fn_terminate_instance
+failed --> terminated : fn_terminate_instance
+
+terminated --> [*]
+
+note bottom of failed
+  Состояния pending и failed разрешены триггером
+  fn_instances_status_guard, но функции текущей
+  версии их не выставляют (ждут агента ноды).
+  Обратных переходов из terminated нет.
+end note
+
+@enduml

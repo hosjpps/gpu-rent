@@ -1,0 +1,104 @@
+@startuml pr3-er-logical-billing
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam dpi 100
+skinparam nodesep 25
+skinparam ranksep 45
+left to right direction
+hide circle
+
+title Логическая ER-модель, часть 1: пользователи, платежи и биллинг\n(PK — первичный ключ, FK — внешний, UK — уникальный, * — NOT NULL)
+
+entity "users" as users {
+  * id : bigint <<PK>>
+  --
+  * email : citext <<UK>>
+  * password_hash : text
+  * full_name : text
+  * role : user_role
+  * status : user_status
+  * balance : numeric(14,4)
+  email_verified_at : timestamptz
+}
+
+entity "api_keys" as api_keys {
+  * id : bigint <<PK>>
+  --
+  * user_id : bigint <<FK>>
+  * key_prefix : char(8)
+  * key_hash : bytea <<UK>>
+  expires_at, revoked_at
+}
+
+entity "ssh_keys" as ssh_keys {
+  * id : bigint <<PK>>
+  --
+  * user_id : bigint <<FK>>
+  * fingerprint : text
+  * public_key : text
+  UK (user_id, fingerprint)
+  UK (id, user_id)
+}
+
+entity "audit_log" as audit_log {
+  * id : bigint <<PK>>
+  --
+  actor_user_id : bigint <<FK>>
+  * action, entity : text
+  * details : jsonb
+  ip : inet
+}
+
+entity "payments" as payments {
+  * id : bigint <<PK>>
+  --
+  * user_id : bigint <<FK>>
+  * provider : text
+  * provider_payment_id : text
+  * amount : numeric(14,2)
+  * status : payment_status
+  UK (provider, provider_payment_id)
+  UK (id, user_id)
+}
+
+entity "transactions" as transactions {
+  * id : bigint <<PK>>
+  --
+  * user_id : bigint <<FK>>
+  * type : tx_type
+  * amount : numeric(14,4)
+  payment_id : bigint <<FK>>
+  usage_id : bigint <<FK>>
+  usage_period_start : timestamptz <<FK>>
+}
+
+entity "usage_records\n(секции по месяцам)" as usage_records {
+  * id : bigint <<PK>>
+  * period_start : timestamptz <<PK>>
+  --
+  * user_id : bigint <<FK>>
+  instance_id : uuid <<FK>>
+  volume_id : bigint <<FK>>
+  * kind : usage_kind
+  * quantity : numeric(20,6)
+  * amount : numeric(14,4)
+}
+
+users ||--o{ api_keys : выпускает
+users ||--o{ ssh_keys : добавляет
+users |o--o{ audit_log : инициатор
+users ||--o{ payments : совершает
+users ||--o{ transactions : баланс
+users ||--o{ usage_records : потребил
+payments |o--o| transactions : "payment_id\n(topup)"
+usage_records |o--o| transactions : "usage_id\n(charge)"
+
+note bottom of usage_records
+  instance_id -> instances(id, user_id)
+  volume_id -> volumes(id, user_id)
+  (часть 2); ровно одно из двух по kind
+end note
+
+@enduml

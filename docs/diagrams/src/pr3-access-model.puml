@@ -1,0 +1,36 @@
+@startuml pr3-access-model
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam dpi 100
+skinparam nodesep 30
+skinparam ranksep 40
+skinparam packageStyle rectangle
+
+title Модель доступа к данным: роли, контекст сессии, RLS и функции
+
+actor "Клиент или\nадминистратор" as USER
+actor "Аналитик" as AN
+actor "Миграции,\nадминистратор БД" as DBA
+
+component "Бэкенд (Node.js)\nLOGIN-пользователь,\nчлен группы gpu_rent_app" as APP
+
+rectangle "PostgreSQL 16, схема gpu_rent" as PG {
+  rectangle "Контекст транзакции\nset_config(..., true):\napp.user_id, app.user_role,\napp.client_ip, app.enc_key" as CTX
+  rectangle "Функции SECURITY DEFINER\nfn_start, fn_resume, fn_stop,\nfn_terminate_instance,\nfn_bill_usage, fn_topup,\nfn_env_set, fn_env_get\nEXECUTE только у gpu_rent_app" as FN
+  rectangle "Таблицы с RLS (роль app)\nuser_id = app.user_id или admin:\ninstances, volumes, ssh_keys,\napi_keys, payments, transactions,\nusage_records, instance_env_vars;\naudit_log читает только admin" as RLS
+  rectangle "Представления аналитики\nv_users_masked,\nmv_daily_revenue,\nv_gpu_availability" as VIEWS
+}
+
+USER -down-> APP : HTTPS, сессия
+APP -down-> CTX : 1. задать контекст
+APP -down-> FN : 2. деньги, GPU,\nсекреты
+APP -down-> RLS : 3. DML в пределах\nGRANT по столбцам
+FN ..> RLS : запись проводок\nи потребления
+AN -down-> VIEWS : роль gpu_rent_analyst,\nтолько SELECT
+DBA -down-> PG : роль gpu_rent_owner:\nDDL, владелец объектов
+CTX -[hidden]right- FN
+RLS -[hidden]right- VIEWS
+
+@enduml
