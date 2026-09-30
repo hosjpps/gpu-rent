@@ -1,6 +1,6 @@
 -- 0008: бизнес-функции: запуск/остановка/терминация инстансов, биллинг, пополнение, секреты env.
 --
--- Правила, общие для всех функций (п. 8.1, 8.9 брифа):
+-- Правила, общие для всех функций (первоначальный проект, П3):
 --   * порядок блокировок: сначала строка users (FOR UPDATE), затем ресурсы пользователя
 --     (инстансы, тома, платежи); строки GPU берутся только через SKIP LOCKED, поэтому
 --     взаимоблокировок между пользователями быть не может;
@@ -20,7 +20,7 @@ SET LOCAL search_path = gpu_rent, pg_catalog;
 -- ---------------------------------------------------------------------------------------------
 -- Контекст приложения. Эти две функции вызываются из политик RLS, поэтому они простые SQL
 -- (PostgreSQL подставляет их тело в запрос) и без SET search_path: используют только pg_catalog.
--- current_setting(..., true) не падает, если контекст не выставлен: строк просто нет (п. 8.9).
+-- current_setting(..., true) не падает, если контекст не выставлен: строк просто нет.
 -- ---------------------------------------------------------------------------------------------
 CREATE FUNCTION fn_app_user_id() RETURNS bigint
 LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('app.user_id', true), '')::bigint $$;
@@ -234,7 +234,7 @@ END
 $$;
 
 -- Остановка или терминация работающего (или простаивающего) инстанса в момент p_at.
--- Порядок по п. 8.7: сначала дотарифицировать интервал до p_at, затем закрыть аллокации GPU.
+-- Порядок такой: сначала дотарифицировать интервал до p_at, затем закрыть аллокации GPU.
 CREATE FUNCTION _fn_halt_instance(p_instance_id uuid, p_at timestamptz, p_new_status instance_status)
 RETURNS void
 LANGUAGE plpgsql SET search_path = pg_catalog, gpu_rent, pg_temp AS $$
@@ -341,6 +341,10 @@ BEGIN
     SELECT a.o_node_id, a.o_gpu_ids INTO v_node, v_gpu_ids
     FROM _fn_alloc_gpus(p_datacenter_id, p_gpu_model_id, p_gpu_count) a;
 
+    -- Момент старта берётся после подбора: видимое закрытие прежней аллокации этой GPU (её upper = момент
+    -- остановки в другой транзакции) уже в прошлом, иначе новый диапазон мог бы пересечь закрытый (23P01).
+    v_now := clock_timestamp();
+
     INSERT INTO instances (user_id, node_id, gpu_model_id, template_id, volume_id, name, pricing_type,
                            gpu_count, container_disk_gb, price_per_hour_snapshot, status,
                            created_at, started_at, last_billed_at)
@@ -357,7 +361,7 @@ END
 $$;
 
 -- Повторный запуск остановленного инстанса (stopped -> running): новый подбор GPU в том же ДЦ,
--- новый снимок цены, last_billed_at сбрасывается на момент старта (п. 8.7).
+-- новый снимок цены, last_billed_at сбрасывается на момент старта.
 CREATE FUNCTION fn_resume_instance(p_instance_id uuid) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, gpu_rent, pg_temp AS $$
 DECLARE
@@ -394,6 +398,10 @@ BEGIN
 
     SELECT a.o_node_id, a.o_gpu_ids INTO v_node, v_gpu_ids
     FROM _fn_alloc_gpus(r.datacenter_id, r.gpu_model_id, r.gpu_count) a;
+
+    -- Момент старта берётся после подбора: видимое закрытие прежней аллокации этой GPU (её upper = момент
+    -- остановки в другой транзакции) уже в прошлом, иначе новый диапазон мог бы пересечь закрытый (23P01).
+    v_now := clock_timestamp();
 
     UPDATE instances
        SET node_id = v_node, status = 'running', price_per_hour_snapshot = v_total,

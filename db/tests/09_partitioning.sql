@@ -68,7 +68,8 @@ BEGIN
 END
 $$;
 
--- fn_ensure_usage_partition
+-- fn_ensure_usage_partition: планировщик работает в системном контексте
+SELECT pg_temp.as_system() \g /dev/null
 DO $$
 DECLARE
     v_name text; v_next text := 'usage_records_' || to_char(date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month', 'YYYY_MM');

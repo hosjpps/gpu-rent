@@ -39,7 +39,7 @@ CREATE INDEX idx_usage_period_brin ON usage_records USING brin (period_start);
 -- Журнал операций: история пользователя и keyset-пагинация (created_at, id).
 CREATE INDEX idx_transactions_user_created ON transactions (user_id, created_at DESC, id DESC);
 CREATE INDEX idx_transactions_payment      ON transactions (payment_id) WHERE payment_id IS NOT NULL;
--- Идемпотентность (п. 8.2): один платёж — одно пополнение, одно потребление — одно списание.
+-- Идемпотентность: один платёж — одно пополнение, одно потребление — одно списание.
 CREATE UNIQUE INDEX uq_transactions_topup_payment ON transactions (payment_id) WHERE type = 'topup';
 CREATE UNIQUE INDEX uq_transactions_charge_usage  ON transactions (usage_id, usage_period_start) WHERE type = 'charge';
 

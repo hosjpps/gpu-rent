@@ -1,5 +1,5 @@
 -- 0004: платежи, тома, инстансы, аллокации GPU, секреты env, учёт потребления, журнал операций, аудит.
--- Согласованность владельца (п. 8.4 брифа) обеспечивается составными внешними ключами:
+-- Согласованность владельца обеспечивается составными внешними ключами:
 -- UNIQUE (id, user_id) у родителя + FK (child_id, user_id) у потомка.
 BEGIN;
 SET LOCAL ROLE gpu_rent_owner;
@@ -33,7 +33,7 @@ CREATE TABLE volumes (
     status         volume_status NOT NULL DEFAULT 'active',
     created_at     timestamptz   NOT NULL DEFAULT now(),
     deleted_at     timestamptz,
-    -- ОТСТУПЛЕНИЕ ОТ БРИФА: граница биллинга хранения. Без неё пришлось бы искать max(period_end)
+    -- ОТСТУПЛЕНИЕ ОТ ПЕРВОНАЧАЛЬНОГО ПРОЕКТА (П3, таблица 25): граница биллинга хранения. Без неё пришлось бы искать max(period_end)
     -- по всем партициям usage_records для каждого тома при каждом проходе (раз в минуту).
     last_billed_at timestamptz   NOT NULL DEFAULT now(),
     CONSTRAINT pk_volumes PRIMARY KEY (id),
@@ -176,7 +176,7 @@ CREATE TABLE audit_log (
 COMMENT ON TABLE payments IS 'Платежи через шлюз. UNIQUE(provider, provider_payment_id) даёт идемпотентность webhook.';
 COMMENT ON COLUMN payments.amount IS 'Сумма платежа в ₽ (2 знака), строго меньше 10^10, чтобы поместиться в transactions.amount.';
 COMMENT ON TABLE volumes IS 'Сетевые тома. Живут в одном ДЦ, подключаются не более чем к одному активному инстансу.';
-COMMENT ON COLUMN volumes.last_billed_at IS 'Граница биллинга хранения (отступление от брифа, см. комментарий в миграции).';
+COMMENT ON COLUMN volumes.last_billed_at IS 'Граница биллинга хранения (отступление от первоначального проекта П3, см. комментарий в миграции).';
 COMMENT ON TABLE instances IS 'Инстансы (поды). Статус меняют только fn_start/stop/resume/terminate и биллинг; переходы охраняет триггер.';
 COMMENT ON COLUMN instances.price_per_hour_snapshot IS 'Цена за весь инстанс в час на момент запуска (фиксируется снимком, FR-10).';
 COMMENT ON COLUMN instances.last_billed_at IS 'До какого момента потребление уже списано. Двигается только вперёд.';

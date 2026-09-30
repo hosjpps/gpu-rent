@@ -4,7 +4,7 @@ BEGIN;
 \ir _helpers.sql
 \ir _fixture.sql
 
--- Пустой контекст (app.user_id вообще не задавался): строк нет, ошибки нет (п. 8.9).
+-- Пустой контекст (app.user_id вообще не задавался): строк нет, ошибки нет.
 SET LOCAL ROLE gpu_rent_app;
 DO $$
 BEGIN
@@ -159,7 +159,10 @@ BEGIN
     PERFORM pg_temp.ok('app role with a system context can run the billing pass');
     PERFORM fn_refresh_daily_revenue();
     PERFORM pg_temp.ok('app role with a system context can refresh the revenue view');
-    PERFORM pg_temp.assert_true(fn_ensure_usage_partition('2031-03-01') = 'usage_records_2031_03', 'app role can create the next usage partition');
+    PERFORM pg_temp.assert_true(fn_ensure_usage_partition('2031-03-01') = 'usage_records_2031_03', 'app role with a system context can create the next usage partition');
+    PERFORM pg_temp.as_user(u1);
+    PERFORM pg_temp.assert_raises('SELECT fn_ensure_usage_partition(''2031-04-01'')', '42501', 'app role with a client context cannot create partitions');
+    PERFORM pg_temp.assert_true(to_regclass('gpu_rent.usage_records_2031_04') IS NULL, 'the rejected call created no partition');
 END
 $$;
 RESET ROLE;

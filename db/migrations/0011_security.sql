@@ -13,7 +13,7 @@ SET LOCAL search_path = gpu_rent, pg_catalog;
 REVOKE ALL ON ALL TABLES    IN SCHEMA gpu_rent FROM PUBLIC;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA gpu_rent FROM PUBLIC;
 
--- Свои функции закрываем явно (п. 8.9), даже если ALTER DEFAULT PRIVILEGES уже сделал это при создании;
+-- Свои функции закрываем явно, даже если ALTER DEFAULT PRIVILEGES уже сделал это при создании;
 -- функции расширений (pgcrypto, citext) остаются публичными — это библиотечные примитивы.
 DO $$
 DECLARE
@@ -59,7 +59,7 @@ GRANT UPDATE (name) ON instances TO gpu_rent_app;
 GRANT SELECT ON instance_gpus TO gpu_rent_app;
 GRANT SELECT, DELETE ON instance_env_vars TO gpu_rent_app;   -- запись — через fn_env_set
 
--- Журналы: UPDATE/DELETE/TRUNCATE не выдаются никогда (п. 8.8); запись в transactions и usage_records — только через функции.
+-- Журналы: UPDATE/DELETE/TRUNCATE не выдаются никогда; запись в transactions и usage_records — только через функции.
 GRANT SELECT ON transactions, usage_records TO gpu_rent_app;
 REVOKE UPDATE, DELETE, TRUNCATE ON transactions, audit_log, usage_records FROM gpu_rent_app;   -- явно, хотя не выдавались
 GRANT SELECT, INSERT ON audit_log TO gpu_rent_app;
@@ -89,7 +89,7 @@ TO gpu_rent_app;
 
 -- ---------------------------------------------------------------------------------------------
 -- RLS (FR-16, NFR-03): строки своего пользователя либо всё для администратора.
--- Без app.user_id политика даёт пустой результат, а не ошибку (п. 8.9).
+-- Без app.user_id политика даёт пустой результат, а не ошибку.
 -- Владелец таблиц (gpu_rent_owner) политики обходит — так работают SECURITY DEFINER-функции.
 -- ---------------------------------------------------------------------------------------------
 ALTER TABLE instances          ENABLE ROW LEVEL SECURITY;

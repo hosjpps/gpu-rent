@@ -7,7 +7,7 @@ SET LOCAL ROLE gpu_rent_owner;
 SET LOCAL search_path = gpu_rent, pg_catalog;
 
 -- ---------------------------------------------------------------------------------------------
--- Append-only (п. 8.8). Защита в два слоя: REVOKE в 0011 и этот триггер (владельца он тоже
+-- Append-only. Защита в два слоя: REVOKE в 0011 и этот триггер (владельца он тоже
 -- останавливает, а REVOKE владельца не ограничивает).
 -- ---------------------------------------------------------------------------------------------
 CREATE FUNCTION fn_forbid_modification() RETURNS trigger
@@ -36,7 +36,7 @@ CREATE TRIGGER trg_usage_records_no_truncate BEFORE TRUNCATE ON usage_records
     FOR EACH STATEMENT EXECUTE FUNCTION fn_forbid_modification();
 
 -- ---------------------------------------------------------------------------------------------
--- Баланс (п. 8.3): users.balance меняется только инкрементом из триггера журнала.
+-- Баланс: users.balance меняется только инкрементом из триггера журнала.
 -- ---------------------------------------------------------------------------------------------
 CREATE FUNCTION fn_ledger_apply() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, gpu_rent, pg_temp AS $$
@@ -153,7 +153,7 @@ $$;
 CREATE TRIGGER trg_instances_volume_dc BEFORE INSERT OR UPDATE OF volume_id, node_id ON instances
     FOR EACH ROW EXECUTE FUNCTION fn_instances_volume_dc();
 
--- GPU из аллокации обязана стоять в ноде инстанса и иметь модель инстанса (п. 8.5).
+-- GPU из аллокации обязана стоять в ноде инстанса и иметь модель инстанса.
 CREATE FUNCTION fn_instance_gpus_consistency() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, gpu_rent, pg_temp AS $$
 BEGIN

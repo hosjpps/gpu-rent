@@ -3,7 +3,7 @@ BEGIN;
 SET LOCAL ROLE gpu_rent_owner;
 SET LOCAL search_path = gpu_rent, pg_catalog;
 
--- Каталог: ДЦ x модель. «Свободные» — включённые GPU online-нод без активной аллокации (п. 8.10).
+-- Каталог: ДЦ x модель. «Свободные» — включённые GPU online-нод без активной аллокации.
 -- Активная аллокация = открытый верхний предел allocated_during; для неё есть partial-индекс.
 -- Цены агрегируются отдельно и присоединяются к уже свёрнутым счётчикам, иначе две строки цены
 -- (on_demand и spot) удвоили бы число GPU.
@@ -45,7 +45,7 @@ LEFT JOIN prices p ON p.datacenter_id = c.datacenter_id AND p.gpu_model_id = c.g
 
 -- Выручка по дням (часовой пояс Москвы), ДЦ и модели. ДЦ и модель берём из instances (модель хранится в
 -- самом инстансе, ДЦ — через ноду), а не из instance_gpus: JOIN с аллокациями размножил бы суммы
--- в gpu_count раз (п. 8.10). GPU-часы = секунды работы * число GPU / 3600.
+-- в gpu_count раз. GPU-часы = секунды работы * число GPU / 3600.
 -- День определяется по началу интервала: минутный интервал через полночь целиком относится к предыдущему дню.
 CREATE MATERIALIZED VIEW mv_daily_revenue AS
 SELECT (u.period_start AT TIME ZONE 'Europe/Moscow')::date AS day,

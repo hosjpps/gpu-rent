@@ -93,6 +93,10 @@ BEGIN
     SELECT a.o_node_id, a.o_gpu_ids INTO v_node, v_gpu_ids
     FROM _fn_alloc_gpus(p_datacenter_id, p_gpu_model_id, p_gpu_count) a;
 
+    -- Момент старта берётся после подбора: видимое закрытие прежней аллокации этой GPU (её upper = момент
+    -- остановки в другой транзакции) уже в прошлом, иначе новый диапазон мог бы пересечь закрытый (23P01).
+    v_now := clock_timestamp();
+
     INSERT INTO instances (user_id, node_id, gpu_model_id, template_id, volume_id, ssh_key_id, name, pricing_type,
                            gpu_count, container_disk_gb, price_per_hour_snapshot, status,
                            created_at, started_at, last_billed_at)

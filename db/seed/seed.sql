@@ -2,7 +2,7 @@
 -- 20 000 инстансов, >= 1 млн записей usage_records за 12 месяцев (2025-10 .. 2026-09) и согласованный журнал операций.
 --
 -- Принципы:
---   * детерминизм: setseed + порядок строк задан ORDER BY; два прогона дают одинаковые данные (кроме шифртекста env);
+--   * детерминизм: setseed + порядок строк задан ORDER BY; два прогона дают одинаковые данные (кроме шифртекста env): значения created_at заданы явно, а не по now();
 --   * "сейчас" в данных фиксировано (seed_now), а не now(): результат не зависит от даты запуска;
 --   * для скорости триггер баланса и его защита отключены на время загрузки, итоговые балансы
 --     считаются одним UPDATE из журнала и сверяются в конце (раздел "Самопроверка").
@@ -104,6 +104,14 @@ CROSS JOIN _period p
 CROSS JOIN (VALUES ('on_demand'::pricing_type), ('spot'::pricing_type)) AS t(pt)
 ORDER BY d.id, m.id, t.pt, p.n;
 
+-- Триггер аудита записал в журнал вставки цен со временем загрузки (now()); относим их к началу действия цены,
+-- иначе данные зависят от даты запуска. Запрет правки журнала снимается только на этот UPDATE.
+ALTER TABLE audit_log DISABLE TRIGGER trg_audit_log_append_only;
+UPDATE audit_log a SET created_at = lower(p.valid_during)
+FROM gpu_prices p
+WHERE a.action = 'gpu_price.insert' AND a.entity_id = p.id::text;
+ALTER TABLE audit_log ENABLE TRIGGER trg_audit_log_append_only;
+
 INSERT INTO storage_prices (datacenter_id, price_per_gb_month, valid_during)
 SELECT d.id, round(9.00 * f.f * p.pf, 2), tstzrange(p.from_ts, p.to_ts, '[)')
 FROM datacenters d
@@ -184,16 +192,16 @@ ORDER BY k;
 -- ============================================================================================
 -- 3. Шаблоны и тома
 -- ============================================================================================
-INSERT INTO templates (id, owner_id, name, docker_image, default_disk_gb, default_ports, is_public)
+INSERT INTO templates (id, owner_id, name, docker_image, default_disk_gb, default_ports, is_public, created_at)
 OVERRIDING SYSTEM VALUE VALUES
-    (1, NULL, 'PyTorch 2.4 (CUDA 12.4)',       'pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel',       50,  '22/tcp,8888/http', true),
-    (2, NULL, 'JupyterLab + PyTorch',          'quay.io/jupyter/pytorch-notebook:cuda12-latest',    40,  '8888/http',        true),
-    (3, NULL, 'Stable Diffusion WebUI',        'ghcr.io/ai-dock/stable-diffusion-webui:latest',     80,  '7860/http',        true),
-    (4, NULL, 'ComfyUI',                       'ghcr.io/ai-dock/comfyui:latest',                    80,  '8188/http',        true),
-    (5, NULL, 'TensorFlow 2.16 GPU + Jupyter', 'tensorflow/tensorflow:2.16.1-gpu-jupyter',          50,  '8888/http',        true),
-    (6, NULL, 'Text Generation Inference',      'ghcr.io/huggingface/text-generation-inference:latest', 100, '8080/http',     true),
-    (7, NULL, 'Ollama',                        'ollama/ollama:latest',                              100, '11434/http',       true),
-    (8, NULL, 'CUDA 12.4 devel (Ubuntu 22.04)', 'nvidia/cuda:12.4.1-devel-ubuntu22.04',            30,  '22/tcp',           true);
+    (1, NULL, 'PyTorch 2.4 (CUDA 12.4)',       'pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel',       50,  '22/tcp,8888/http', true, :'user_t0'::timestamptz),
+    (2, NULL, 'JupyterLab + PyTorch',          'quay.io/jupyter/pytorch-notebook:cuda12-latest',    40,  '8888/http',        true, :'user_t0'::timestamptz),
+    (3, NULL, 'Stable Diffusion WebUI',        'ghcr.io/ai-dock/stable-diffusion-webui:latest',     80,  '7860/http',        true, :'user_t0'::timestamptz),
+    (4, NULL, 'ComfyUI',                       'ghcr.io/ai-dock/comfyui:latest',                    80,  '8188/http',        true, :'user_t0'::timestamptz),
+    (5, NULL, 'TensorFlow 2.16 GPU + Jupyter', 'tensorflow/tensorflow:2.16.1-gpu-jupyter',          50,  '8888/http',        true, :'user_t0'::timestamptz),
+    (6, NULL, 'Text Generation Inference',      'ghcr.io/huggingface/text-generation-inference:latest', 100, '8080/http',     true, :'user_t0'::timestamptz),
+    (7, NULL, 'Ollama',                        'ollama/ollama:latest',                              100, '11434/http',       true, :'user_t0'::timestamptz),
+    (8, NULL, 'CUDA 12.4 devel (Ubuntu 22.04)', 'nvidia/cuda:12.4.1-devel-ubuntu22.04',            30,  '22/tcp',           true, :'user_t0'::timestamptz);
 
 SELECT setval(pg_get_serial_sequence('templates', 'id'), 8) \g /dev/null
 
@@ -510,7 +518,8 @@ UPDATE users u SET balance = s.bal
 FROM (SELECT user_id, sum(amount) AS bal FROM transactions GROUP BY user_id) s
 WHERE s.user_id = u.id;
 
--- Аудит: блокировки пользователей, выполненные администратором.
+-- Аудит: блокировки пользователей, выполненные администратором. Кроме них в журнале есть вставки цен GPU,
+-- записанные триггером при загрузке цен (раздел 1; время перенесено на начало действия цены).
 INSERT INTO audit_log (actor_user_id, action, entity, entity_id, details, ip, created_at)
 SELECT 1, 'user.status_changed', 'users', u.id::text, '{"from": "active", "to": "blocked"}'::jsonb, '198.51.100.10'::inet,
        least(:'seed_now'::timestamptz - interval '1 day', u.created_at + interval '20 days')
