@@ -1,0 +1,44 @@
+@startgantt
+skinparam monochrome true
+skinparam defaultFontName Arial
+skinparam defaultFontSize 14
+language ru
+printscale monthly
+Project starts 2026-09-01
+saturday are closed
+sunday are closed
+
+-- Блок 1. Старт и БД --
+[П1 Введение] as [A1] lasts 1 week
+[П2 Требования и план] as [A2] lasts 1 week
+[A2] starts at [A1]'s end
+[П3-П4 Проектирование БД] as [A3] lasts 2 weeks
+[A3] starts at [A2]'s end
+-- Блок 2. Реализация и деплой --
+[Бэкенд и фронтенд] as [A4] lasts 2 weeks
+[A4] starts at [A3]'s end
+[Деплой на VPS] as [A5] lasts 2 weeks
+[A5] starts at [A4]'s end
+-- Блок 3. Данные и API --
+[Требования к данным] as [A6] lasts 1 week
+[A6] starts at [A5]'s end
+[БД, итерация 2] as [A7] lasts 1 week
+[A7] starts at [A6]'s end
+[RESTful API] as [A8] lasts 2 weeks
+[A8] starts at [A7]'s end
+[Деплой, итерация 2] as [A9] lasts 2 weeks
+[A9] starts at [A8]'s end
+-- Блок 4. Курсовой проект --
+[Архитектура, UI, схема БД] as [B1] lasts 3 weeks
+[B1] starts at [A9]'s end
+[Серверная логика, API, auth] as [B2] lasts 3 weeks
+[B2] starts at [B1]'s end
+[Интеграция, безопасность, кэш] as [B3] lasts 4 weeks
+[B3] starts at [B2]'s end
+[Тестирование, CI/CD] as [B4] lasts 3 weeks
+[B4] starts at [B3]'s end
+[Мониторинг, масштабирование] as [B5] lasts 3 weeks
+[B5] starts at [B4]'s end
+[Итоги и защита] as [B6] lasts 2 weeks
+[B6] starts at [B5]'s end
+@endgantt

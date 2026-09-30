@@ -1,0 +1,26 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam ArrowFontSize 11
+left to right direction
+
+actor "Гость" as Guest
+actor "Клиент" as Client
+actor "Администратор" as Admin
+rectangle "Биллинг-планировщик\n(раз в минуту)" as Billing <<система>>
+rectangle "Агент ноды" as Agent <<система>>
+rectangle "Платёжный шлюз\n(ЮKassa)" as Pay <<внешняя система>>
+
+rectangle "GPU Rent\n(монолитное веб-приложение)" as Sys
+
+Guest --> Sys : регистрация, просмотр каталога
+Client --> Sys : баланс, инстансы, тома,\nSSH- и API-ключи
+Admin --> Sys : ДЦ, ноды, GPU, цены,\nпользователи, дашборд
+Billing --> Sys : списание за GPU и хранение,\nавтоостановка
+Agent --> Sys : статус инстансов и нод
+Sys --> Agent : команды запуска/остановки
+Pay --> Sys : webhook об оплате
+Sys --> Pay : создание платежа
+@enduml
