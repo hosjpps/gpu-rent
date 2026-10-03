@@ -77,16 +77,16 @@ BEGIN
     PERFORM pg_temp.assert_eq(fn_ensure_usage_partition('2026-03-20'), 'usage_records_2026_03', 'existing partition: name returned, nothing created');
     PERFORM pg_temp.assert_eq(fn_ensure_usage_partition(), v_next, 'no argument: the partition of the next month');
 
-    PERFORM pg_temp.assert_true(to_regclass('gpu_rent.usage_records_2027_01') IS NULL, 'partition 2027-01 does not exist yet');
-    v_name := fn_ensure_usage_partition('2027-01-15');
-    PERFORM pg_temp.assert_eq(v_name, 'usage_records_2027_01', 'partition for 2027-01 is created');
-    PERFORM pg_temp.assert_eq(fn_ensure_usage_partition('2027-01-01'), 'usage_records_2027_01', 'second call is idempotent');
-    PERFORM pg_temp.assert_eq(pg_temp.put_usage('2027-01-20 12:00:00+00'), 'usage_records_2027_01', 'rows of the new month are routed to the new partition');
+    PERFORM pg_temp.assert_true(to_regclass('gpu_rent.usage_records_2035_01') IS NULL, 'partition 2035-01 does not exist yet');
+    v_name := fn_ensure_usage_partition('2035-01-15');
+    PERFORM pg_temp.assert_eq(v_name, 'usage_records_2035_01', 'partition for 2035-01 is created');
+    PERFORM pg_temp.assert_eq(fn_ensure_usage_partition('2035-01-01'), 'usage_records_2035_01', 'second call is idempotent');
+    PERFORM pg_temp.assert_eq(pg_temp.put_usage('2035-01-20 12:00:00+00'), 'usage_records_2035_01', 'rows of the new month are routed to the new partition');
 
     -- в новой партиции есть всё то же, что и в остальных
-    PERFORM pg_temp.assert_true(EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'gpu_rent' AND tablename = 'usage_records_2027_01' AND indexdef LIKE '%USING brin (period_start)%'),
+    PERFORM pg_temp.assert_true(EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'gpu_rent' AND tablename = 'usage_records_2035_01' AND indexdef LIKE '%USING brin (period_start)%'),
                                 'new partition got the BRIN index automatically');
-    PERFORM pg_temp.assert_true(EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'gpu_rent' AND tablename = 'usage_records_2027_01' AND indexdef LIKE '%(user_id, period_start)%'),
+    PERFORM pg_temp.assert_true(EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'gpu_rent' AND tablename = 'usage_records_2035_01' AND indexdef LIKE '%(user_id, period_start)%'),
                                 'new partition got the (user_id, period_start) index automatically');
 
     -- если в DEFAULT уже лежат строки нужного месяца, PostgreSQL не даст создать партицию: их надо переносить

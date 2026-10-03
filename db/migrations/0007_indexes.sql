@@ -1,4 +1,4 @@
--- 0007: индексы. Обоснование каждого — замерами EXPLAIN (ANALYZE, BUFFERS) в db/bench.
+-- 0007: индексы. Ключевые обоснованы замерами EXPLAIN (ANALYZE, BUFFERS) в db/bench; индексы внешних ключей — по правилу (внешние ключи индексируются).
 -- Индексы, которые уже создают UNIQUE/PK/EXCLUDE, повторно не объявляются.
 BEGIN;
 SET LOCAL ROLE gpu_rent_owner;

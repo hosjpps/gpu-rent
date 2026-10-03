@@ -9,7 +9,7 @@ saturday are closed
 sunday are closed
 
 -- Блок 1. Старт и БД --
-[П1 Введение] as [A1] lasts 1 week
+[П1 Введение] as [A1] lasts 4 days
 [П2 Требования и план] as [A2] lasts 1 week
 [A2] starts at [A1]'s end
 [П3-П4 Проектирование БД] as [A3] lasts 2 weeks
