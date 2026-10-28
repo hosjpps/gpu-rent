@@ -1,0 +1,2377 @@
+openapi: 3.1.0
+info:
+  title: GPU Rent API
+  version: 1.0.0
+  summary: REST API сервиса аренды GPU-серверов
+  description: |
+    API учебного проекта «GPU Rent»: каталог GPU, запуск и остановка инстансов, тома хранения,
+    баланс и платежи, кабинет администратора. Бизнес-правила (проверка баланса, выделение GPU,
+    биллинг) выполняются функциями PostgreSQL; сервер проверяет вход, права и формат данных.
+
+    ## Формат данных
+    - Тела запросов и ответов — JSON (`Content-Type: application/json`), лимит тела — 32 КБ.
+    - **Деньги — строки-десятичные** (`"1234.5600"`), а не числа: так нет ошибок округления.
+    - Время — ISO 8601 в UTC (`2026-10-28T09:30:00.000Z`), даты — `ГГГГ-ММ-ДД` (сутки считаются по Москве).
+    - Поля тела, которых нет в описании, отвергаются ошибкой `VALIDATION_ERROR`. Роль, статус и баланс
+      клиент передать не может — их задаёт только сервер.
+
+    ## Аутентификация
+    Два способа, действует один:
+    - **Cookie сессии** (`sid`, в production — `__Host-sid`): выдаётся при `POST /auth/login`, HttpOnly,
+      SameSite=Lax, живёт 7 дней и продлевается при использовании. Для браузера.
+    - **API-ключ** в заголовке `Authorization: Bearer gr_...`: создаётся в личном кабинете
+      (`POST /api-keys`), показывается один раз. Для скриптов. Если заголовок передан, cookie не читается.
+
+    Операции, помеченные «только по cookie», API-ключом недоступны (ответ `403 SESSION_REQUIRED`):
+    выпуск и отзыв ключей, смена пароля, изменяющие операции администратора. Украденный ключ не должен
+    уметь выпускать новые ключи и менять цены.
+
+    ## Защита от CSRF
+    Небезопасные методы (POST, DELETE), если запрос идёт **без** `Authorization: Bearer`, требуют:
+    заголовок `X-Requested-With: fetch` и заголовок `Origin` своего сайта (браузер ставит его сам).
+    Это относится и к `POST /auth/login`, `/auth/register`, `/auth/verify`. Без них — `403 CSRF`.
+    Не требуется: запросы с API-ключом, `POST /webhooks/payments` (подпись) и `/internal/billing` (секрет).
+
+    ## Ошибки
+    Любая ошибка — `{"error": {"code": "...", "message": "по-русски", "details": ...}}`;
+    `details` есть только у `VALIDATION_ERROR` (массив `{path, message}`). По `code` клиент принимает
+    решение, `message` можно показать пользователю. Кроме указанных у операций, возможны:
+    `400 INVALID_JSON`, `413 PAYLOAD_TOO_LARGE`, `404 ROUTE_NOT_FOUND`, `500 INTERNAL`,
+    `503 DB_UNAVAILABLE` / `TIMEOUT` (база недоступна или запрос слишком долгий).
+    Ошибки БД сервер переводит так: `GR001` → 409 `NO_CAPACITY`, `GR002` → 402 `INSUFFICIENT_FUNDS`,
+    `GR003` → 409 `INVALID_STATE`, `GR004` → 404 `NOT_FOUND`, `GR005` → 422 `CONSISTENCY`,
+    `GR006` → 500 `CONFIG`, нарушение уникальности → 409 `CONFLICT`, ссылки и ограничения → 422 `VALIDATION`.
+
+    ## Кэширование
+    Публичный каталог (`/catalog/gpus`, `/catalog/templates`) кэшируется CDN:
+    `public, s-maxage=30, stale-while-revalidate=60`. Всё персональное — `private, no-store`.
+
+    ## Биллинг без постоянного процесса
+    Сервер работает как serverless-функция, поэтому деньги списываются так: при обращении пользователя к
+    балансу, списку инстансов или изменению тома, по расписанию (`/internal/billing`: GitHub Actions каждые
+    30 минут, Vercel Cron раз в сутки). Между проходами баланс может уйти в небольшой минус, затем идёт
+    автоостановка. Для запуска инстанса на балансе должна быть сумма не меньше стоимости одного часа.
+  contact:
+    name: Васин С. А., ЭФБО-17-24
+servers:
+  - url: /api
+    description: Тот же хост, с которого открыта документация
+tags:
+  - name: Аутентификация
+    description: Регистрация, вход, подтверждение email, смена пароля.
+  - name: Каталог
+    description: Публичный каталог GPU и шаблонов. Доступен без входа и кэшируется CDN.
+  - name: Ключи и шаблоны
+    description: SSH-ключи, API-ключи и личные (приватные) шаблоны текущего пользователя.
+  - name: Инстансы
+    description: Аренда GPU — запуск, остановка, возобновление и удаление инстансов.
+  - name: Тома
+    description: Постоянное хранилище, которое подключается к инстансу.
+  - name: Биллинг
+    description: Баланс, история операций, расходы.
+  - name: Платежи
+    description: Пополнение баланса. Вместо реальной ЮKassa работает демо-шлюз с подписанным уведомлением.
+  - name: Администрирование
+    description: Только для роли `admin` (клиенту — `403 FORBIDDEN`). Изменяющие операции — только по cookie.
+  - name: Служебные
+    description: Проверка работоспособности, биллинг по расписанию, документация.
+
+paths:
+  # ------------------------------------------------------------------ Аутентификация
+  /auth/register:
+    post:
+      tags: [Аутентификация]
+      operationId: register
+      summary: Регистрация
+      description: |
+        Создаёт учётную запись клиента с нулевым балансом. Вход автоматически не выполняется.
+        Пока email не подтверждён, запускать инстансы нельзя (`403 EMAIL_NOT_VERIFIED`).
+        Почтового сервера нет: в демо-режиме (`DEMO_MAIL=1`) ссылка подтверждения приходит в поле
+        `verifyUrl` ответа, письмо не отправляется. Число регистраций с одного IP ограничено.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example: { email: ivan@example.com, password: s3cret-pass, fullName: Иван Петров }
+      responses:
+        '201':
+          description: Учётная запись создана.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+                  verifyUrl:
+                    type: string
+                    description: Ссылка подтверждения email. Только в демо-режиме.
+                    example: https://gpu-rent.example/verify?token=Xk3...
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Email уже зарегистрирован (`EMAIL_TAKEN`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: EMAIL_TAKEN, message: Пользователь с таким email уже зарегистрирован } }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/login:
+    post:
+      tags: [Аутентификация]
+      operationId: login
+      summary: Вход
+      description: |
+        Проверяет email и пароль и устанавливает cookie сессии (`Set-Cookie`). Попытки ограничены по IP и по
+        email (счётчик хранится в БД); при превышении — `429` и заголовок `Retry-After`.
+        Сообщение об ошибке одинаково для неверного email и неверного пароля.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example: { email: demo@gpu-rent.example, password: demo12345 }
+      responses:
+        '200':
+          description: Вход выполнен.
+          headers:
+            Set-Cookie:
+              description: Cookie сессии (`sid`; в production `__Host-sid`), HttpOnly, SameSite=Lax.
+              schema: { type: string }
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Неверный email или пароль (`INVALID_CREDENTIALS`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: INVALID_CREDENTIALS, message: Неверный email или пароль } }
+        '403':
+          description: Учётная запись заблокирована (`USER_BLOCKED`) либо нет заголовка CSRF (`CSRF`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: USER_BLOCKED, message: Учётная запись заблокирована } }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/logout:
+    post:
+      tags: [Аутентификация]
+      operationId: logout
+      summary: Выход
+      description: Удаляет текущую сессию и cookie. Без входа тоже отвечает `200`.
+      security:
+        - {}
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      responses:
+        '200':
+          description: Сессия завершена.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, const: true }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /auth/me:
+    get:
+      tags: [Аутентификация]
+      operationId: getMe
+      summary: Текущий пользователь
+      description: Возвращает владельца сессии или API-ключа. Баланс — на момент запроса, без начисления за работу инстансов (его делает `/billing/balance`).
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Текущий пользователь.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /auth/password:
+    post:
+      tags: [Аутентификация]
+      operationId: changePassword
+      summary: Смена пароля
+      description: |
+        Только по cookie. После смены все прежние сессии пользователя удаляются, текущему браузеру выдаётся
+        новая (в ответе `Set-Cookie`): старый токен мог быть украден. Число попыток ограничено.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Пароль изменён.
+          headers:
+            Set-Cookie:
+              description: Новая cookie сессии.
+              schema: { type: string }
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Нет входа (`UNAUTHORIZED`) либо неверен текущий пароль (`INVALID_CREDENTIALS`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: INVALID_CREDENTIALS, message: Текущий пароль указан неверно } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/verify:
+    post:
+      tags: [Аутентификация]
+      operationId: verifyEmail
+      summary: Подтверждение email
+      description: 'Публичная: ссылка из письма открывается и без входа. Токен одноразовый и действует 24 часа.'
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              additionalProperties: false
+              properties:
+                token:
+                  type: string
+                  minLength: 20
+                  maxLength: 200
+                  description: Токен из ссылки подтверждения.
+      responses:
+        '200':
+          description: Email подтверждён.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [verified]
+                properties:
+                  verified: { type: boolean, const: true }
+        '400':
+          description: Неверный формат (`VALIDATION_ERROR`), либо токен недействителен или устарел (`INVALID_TOKEN`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: INVALID_TOKEN, message: Ссылка подтверждения недействительна или устарела } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /auth/resend:
+    post:
+      tags: [Аутентификация]
+      operationId: resendVerification
+      summary: Повторная отправка ссылки подтверждения
+      description: Создаёт новый токен подтверждения; прежние неиспользованные ссылки перестают работать. В демо-режиме ссылка возвращается в ответе. Не чаще 5 раз в час.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      responses:
+        '200':
+          description: Ссылка создана.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sent]
+                properties:
+                  sent: { type: boolean, const: true }
+                  verifyUrl:
+                    type: string
+                    description: Только в демо-режиме.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ------------------------------------------------------------------ Каталог
+  /catalog/gpus:
+    get:
+      tags: [Каталог]
+      operationId: listCatalogGpus
+      summary: Доступность и цены GPU
+      description: |
+        По одной строке на пару «дата-центр + модель GPU». Публичный, не зависит от пользователя и
+        кэшируется CDN на 30 секунд, поэтому `free` может отставать на это время.
+      security: []
+      responses:
+        '200':
+          description: Каталог.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GpuOffer' }
+              example:
+                - datacenter: { code: msk-1, name: Москва-1, city: Москва }
+                  model: { name: RTX 4090, vramGb: 24 }
+                  total: 24
+                  free: 17
+                  priceOnDemand: '48.0000'
+                  priceSpot: '29.0000'
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /catalog/templates:
+    get:
+      tags: [Каталог]
+      operationId: listPublicTemplates
+      summary: Публичные шаблоны
+      description: |
+        Только публичные шаблоны (образ Docker и настройки по умолчанию). Ответ одинаков для всех и
+        кэшируется CDN. Личные шаблоны пользователя — отдельно, `GET /templates/mine`.
+      security: []
+      responses:
+        '200':
+          description: Публичные шаблоны.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Template' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ------------------------------------------------------------------ Ключи и шаблоны
+  /ssh-keys:
+    get:
+      tags: [Ключи и шаблоны]
+      operationId: listSshKeys
+      summary: Мои SSH-ключи
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Ключи текущего пользователя, новые первыми.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SshKey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Ключи и шаблоны]
+      operationId: createSshKey
+      summary: Добавить SSH-ключ
+      description: |
+        Принимает публичный ключ OpenSSH (`ssh-ed25519`, `ssh-rsa`, `ecdsa-sha2-nistp256/384/521`).
+        Отпечаток SHA256 считает сервер. Не более 20 ключей на пользователя.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SshKeyRequest' }
+      responses:
+        '201':
+          description: Ключ добавлен.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SshKey' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Такой ключ уже добавлен (`SSH_KEY_EXISTS`) либо достигнут предел в 20 ключей (`LIMIT_REACHED`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: SSH_KEY_EXISTS, message: Такой SSH-ключ уже добавлен } }
+
+  /ssh-keys/{id}:
+    delete:
+      tags: [Ключи и шаблоны]
+      operationId: deleteSshKey
+      summary: Удалить SSH-ключ
+      description: Инстансы, которые использовали ключ, остаются, ссылка на ключ у них обнуляется.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      responses:
+        '204': { description: Ключ удалён. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api-keys:
+    get:
+      tags: [Ключи и шаблоны]
+      operationId: listApiKeys
+      summary: Мои API-ключи
+      description: Полный ключ не возвращается никогда — только префикс для опознания.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Ключи текущего пользователя, включая отозванные.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ApiKey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Ключи и шаблоны]
+      operationId: createApiKey
+      summary: Выпустить API-ключ
+      description: |
+        Только по cookie. Полный ключ (`gr_` + 32 случайных байта в base64url) есть **только в этом ответе**:
+        в БД хранится его SHA-256. Не более 10 действующих ключей.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyRequest' }
+            example: { name: CI, expiresAt: '2027-01-01T00:00:00Z' }
+      responses:
+        '201':
+          description: Ключ выпущен.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apiKey, key]
+                properties:
+                  apiKey: { $ref: '#/components/schemas/ApiKey' }
+                  key:
+                    type: string
+                    description: Полный ключ. Сохраните сразу — повторно его показать нельзя.
+                    example: gr_Vh2b9mXy0q8m3o1R7dK4a6Jt5uZsNwEeLcPfGiHxYQA
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Нет доступа либо ключом выпускать ключи нельзя (`SESSION_REQUIRED`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: SESSION_REQUIRED, message: 'Действие доступно только из браузера, по сессии, а не по API-ключу' } }
+        '409':
+          description: Достигнут предел в 10 действующих ключей (`LIMIT_REACHED`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api-keys/{id}:
+    delete:
+      tags: [Ключи и шаблоны]
+      operationId: revokeApiKey
+      summary: Отозвать API-ключ
+      description: Только по cookie. Запись остаётся в списке с датой отзыва; повторный отзыв тоже даёт `204`.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '204': { description: Ключ отозван. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /templates/mine:
+    get:
+      tags: [Ключи и шаблоны]
+      operationId: listMyTemplates
+      summary: Мои личные шаблоны
+      description: Только шаблоны текущего пользователя. Ответ персональный и никогда не кэшируется.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Личные шаблоны.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Template' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /templates:
+    post:
+      tags: [Ключи и шаблоны]
+      operationId: createTemplate
+      summary: Создать личный шаблон
+      description: Шаблон всегда приватный, владелец — текущий пользователь (из тела не читается). Не более 20 шаблонов.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateRequest' }
+            example: { name: Мой PyTorch, dockerImage: 'pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime', defaultDiskGb: 50, defaultPorts: '22/tcp,8888/http' }
+      responses:
+        '201':
+          description: Шаблон создан.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Template' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Достигнут предел в 20 шаблонов (`LIMIT_REACHED`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /templates/{id}:
+    delete:
+      tags: [Ключи и шаблоны]
+      operationId: deleteTemplate
+      summary: Удалить личный шаблон
+      description: Публичные и чужие шаблоны удалить нельзя — для них `404`.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      responses:
+        '204': { description: Шаблон удалён. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Шаблон используется существующими инстансами (`TEMPLATE_IN_USE`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: TEMPLATE_IN_USE, message: Шаблон используется существующими инстансами } }
+
+  # ------------------------------------------------------------------ Инстансы
+  /instances:
+    get:
+      tags: [Инстансы]
+      operationId: listInstances
+      summary: Список инстансов
+      description: |
+        Свои инстансы, новые первыми, не больше 200. Перед чтением выполняется начисление за работу
+        (биллинг при обращении), поэтому статус и баланс актуальны. Администратор с `?all=1` видит инстансы
+        всех пользователей (в каждом есть `owner`).
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: all
+          in: query
+          description: '`1` — все инстансы (только для администратора, у клиента параметр игнорируется).'
+          schema: { type: string, enum: ['0', '1'] }
+      responses:
+        '200':
+          description: Инстансы.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Instance' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Инстансы]
+      operationId: createInstance
+      summary: Запустить инстанс
+      description: |
+        Требует подтверждённый email. Все проверки и выделение GPU выполняет функция БД `fn_start_instance`
+        одной транзакцией: на балансе должна быть сумма не меньше стоимости **одного часа**, в дата-центре —
+        достаточно свободных GPU, том (если указан) свободен и находится в том же дата-центре.
+        Значения `env` шифруются в БД, наружу уходят только имена (`envNames`).
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInstanceRequest' }
+            example:
+              name: train-1
+              datacenterCode: msk-1
+              gpuModel: RTX 4090
+              gpuCount: 1
+              pricingType: on_demand
+              templateId: 1
+              containerDiskGb: 50
+              env: { HF_TOKEN: hf_xxx }
+      responses:
+        '201':
+          description: Инстанс создан и запущен.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Instance' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402':
+          description: Недостаточно средств (`INSUFFICIENT_FUNDS`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Email не подтверждён (`EMAIL_NOT_VERIFIED`), пользователь заблокирован либо нет прав.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: EMAIL_NOT_VERIFIED, message: Подтвердите email, чтобы запускать инстансы } }
+        '404':
+          description: Дата-центр, модель GPU, шаблон, том или SSH-ключ не найдены (`NOT_FOUND`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Нет свободных GPU (`NO_CAPACITY`) либо том уже подключён (`INVALID_STATE`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: NO_CAPACITY, message: Нет свободных GPU выбранной модели в этом дата-центре } }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /instances/{id}:
+    get:
+      tags: [Инстансы]
+      operationId: getInstance
+      summary: Один инстанс
+      description: 'Чужой инстанс клиенту не виден (`404`, а не `403`: существование не раскрывается). Администратор видит любой.'
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UuidPath'
+      responses:
+        '200':
+          description: Инстанс.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Instance' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /instances/{id}/stop:
+    post:
+      tags: [Инстансы]
+      operationId: stopInstance
+      summary: Остановить инстанс
+      description: Только запущенный (`running`). GPU освобождаются и перестают тарифицироваться; подключённый том остаётся занятым этим инстансом.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UuidPath'
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      responses:
+        '200':
+          description: Инстанс остановлен.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Instance' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /instances/{id}/resume:
+    post:
+      tags: [Инстансы]
+      operationId: resumeInstance
+      summary: Возобновить инстанс
+      description: |
+        Только остановленный (`stopped`). Подбираются свободные GPU того же дата-центра; цена фиксируется
+        заново на момент возобновления. Если свободных GPU нет — `409 NO_CAPACITY`.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UuidPath'
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      responses:
+        '200':
+          description: Инстанс снова запущен.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Instance' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Инстанс не остановлен (`INVALID_STATE`) либо нет свободных GPU (`NO_CAPACITY`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /instances/{id}/terminate:
+    post:
+      tags: [Инстансы]
+      operationId: terminateInstance
+      summary: Удалить инстанс
+      description: Завершает инстанс окончательно (из любого состояния, кроме уже удалённого); начисление закрывается моментом удаления.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UuidPath'
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      responses:
+        '200':
+          description: 'Инстанс удалён (`status: terminated`).'
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Instance' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ------------------------------------------------------------------ Тома
+  /volumes:
+    get:
+      tags: [Тома]
+      operationId: listVolumes
+      summary: Мои тома
+      description: Только активные тома текущего пользователя (удалённые не показываются), новые первыми. Администратор тоже видит только свои.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Тома.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Volume' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Тома]
+      operationId: createVolume
+      summary: Создать том
+      description: Хранение тарифицируется помесячно за ГБ; начисление идёт вместе с биллингом инстансов.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVolumeRequest' }
+            example: { name: datasets, datacenterCode: msk-1, sizeGb: 100 }
+      responses:
+        '201':
+          description: Том создан.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Volume' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /volumes/{id}:
+    delete:
+      tags: [Тома]
+      operationId: deleteVolume
+      summary: Удалить том
+      description: |
+        Мягкое удаление: том исчезает из списка, а хранение дотарифицируется до момента удаления следующим
+        проходом биллинга. Том, подключённый к инстансу (в том числе остановленному), удалить нельзя.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      responses:
+        '204': { description: Том удалён. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /volumes/{id}/extend:
+    post:
+      tags: [Тома]
+      operationId: extendVolume
+      summary: Увеличить том
+      description: |
+        `sizeGb` — **новый общий** размер, а не прирост. Уменьшать нельзя (`409 INVALID_STATE`).
+        Перед изменением начисляется хранение по старому размеру.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sizeGb]
+              additionalProperties: false
+              properties:
+                sizeGb: { type: integer, minimum: 10, maximum: 10000, description: Новый общий размер, ГБ. }
+            example: { sizeGb: 200 }
+      responses:
+        '200':
+          description: Размер изменён.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Volume' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ------------------------------------------------------------------ Биллинг
+  /billing/balance:
+    get:
+      tags: [Биллинг]
+      operationId: getBalance
+      summary: Баланс
+      description: |
+        Сначала начисляет за работу инстансов и хранение текущего пользователя (биллинг при обращении,
+        функция БД `fn_bill_current_user`), затем возвращает баланс. Если средств не хватило, инстансы
+        автоматически останавливаются — об этом `stopped`.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Баланс после начисления.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [balance, charged, stopped]
+                properties:
+                  balance: { $ref: '#/components/schemas/Money' }
+                  charged:
+                    allOf: [{ $ref: '#/components/schemas/Money' }]
+                    description: Сколько списано этим обращением.
+                  stopped:
+                    type: integer
+                    description: Сколько инстансов остановлено из-за нехватки средств этим обращением.
+              example: { balance: '1520.7500', charged: '12.4000', stopped: 0 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /billing/transactions:
+    get:
+      tags: [Биллинг]
+      operationId: listTransactions
+      summary: История операций по счёту
+      description: |
+        Пополнения, списания, возвраты — новые первыми. Постраничность keyset: передайте `nextCursor`
+        из ответа как `cursor` в следующем запросе; `nextCursor: null` — страниц больше нет.
+        Курсор непрозрачный, менять его нельзя (`400 INVALID_CURSOR`).
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: Курсор следующей страницы.
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница операций.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Transaction' }
+                  nextCursor:
+                    type: [string, 'null']
+                    description: Курсор следующей страницы либо null.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /billing/spend:
+    get:
+      tags: [Биллинг]
+      operationId: getSpend
+      summary: Расходы за период
+      description: |
+        Расходы по дням (сутки по Москве) и по инстансам. Границы включительно; по умолчанию — последние 30 дней,
+        не более 366. `storage` — стоимость хранения томов (она не относится ни к одному инстансу и входит в
+        `total`, но не в `byInstance`).
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+          description: Начало периода, `ГГГГ-ММ-ДД`.
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+          description: Конец периода, `ГГГГ-ММ-ДД`.
+      responses:
+        '200':
+          description: Расходы.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Spend' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ------------------------------------------------------------------ Платежи
+  /payments:
+    post:
+      tags: [Платежи]
+      operationId: createPayment
+      summary: Создать платёж на пополнение
+      description: |
+        Создаёт платёж в статусе `pending` текущему пользователю. Сумма — от 10 до 100000 ₽, не более двух
+        знаков после запятой. Баланс изменится только после подтверждённого уведомления шлюза
+        (`/webhooks/payments`) либо в демо-режиме — после `/payments/{id}/demo-pay`.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              additionalProperties: false
+              properties:
+                amount:
+                  type: [string, number]
+                  description: Сумма в рублях, 10–100000, до 2 знаков после запятой. Лучше строкой.
+                  examples: ['500.00']
+            example: { amount: '500.00' }
+      responses:
+        '201':
+          description: Платёж создан.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payment, confirmationUrl]
+                properties:
+                  payment: { $ref: '#/components/schemas/Payment' }
+                  confirmationUrl:
+                    type: string
+                    description: Страница оплаты. В демо-режиме ведёт обратно в кабинет.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /payments/{id}/demo-pay:
+    post:
+      tags: [Платежи]
+      operationId: demoPayPayment
+      summary: Оплатить платёж (демо-шлюз)
+      description: |
+        Имитация платёжного шлюза: сервер сам формирует уведомление `succeeded` с подписью HMAC-SHA256
+        и обрабатывает его тем же кодом, что и настоящий вебхук. Работает только при `DEMO_PAYMENTS=1`,
+        иначе `404 ROUTE_NOT_FOUND`. Оплатить можно только свой платёж. Повторный вызов деньги не зачисляет
+        (`credited: false`).
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeaderCookie'
+      responses:
+        '200':
+          description: Уведомление обработано.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payment, credited]
+                properties:
+                  payment: { $ref: '#/components/schemas/Payment' }
+                  credited:
+                    type: boolean
+                    description: true — деньги зачислены этим вызовом, false — платёж уже был зачтён ранее.
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /webhooks/payments:
+    post:
+      tags: [Платежи]
+      operationId: paymentWebhook
+      summary: Уведомление платёжного шлюза
+      description: |
+        Вызывается шлюзом, без входа. Подлинность подтверждает заголовок `X-Signature` — hex от
+        HMAC-SHA256 над **сырыми байтами тела** с общим секретом; неверная подпись — `401 INVALID_SIGNATURE`.
+        Сумма сверяется с платежом в БД, пользователь берётся из платежа, а не из уведомления.
+        Идемпотентно: повторное уведомление о том же платеже деньги не зачисляет (`credited: false`).
+      security: []
+      parameters:
+        - name: X-Signature
+          in: header
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{64}$' }
+          description: HMAC-SHA256 от тела запроса, hex.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentId, status, amount]
+              properties:
+                paymentId: { type: string, description: Идентификатор платежа у провайдера. }
+                status: { type: string, enum: [succeeded, failed] }
+                amount:
+                  type: [string, number]
+                  description: Сумма; должна совпадать с суммой платежа.
+            example: { paymentId: demo_0b9c1f52-6d4e-4a43-9c0e-5d4f2f8d3b11, status: succeeded, amount: '500.00' }
+      responses:
+        '200':
+          description: Уведомление принято.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, paymentId, status, credited]
+                properties:
+                  ok: { type: boolean, const: true }
+                  paymentId: { type: integer }
+                  status: { $ref: '#/components/schemas/PaymentStatus' }
+                  credited: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Неверная или отсутствующая подпись (`INVALID_SIGNATURE`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: { code: INVALID_SIGNATURE, message: Неверная подпись уведомления } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ------------------------------------------------------------------ Администрирование
+  /admin/dashboard:
+    get:
+      tags: [Администрирование]
+      operationId: adminDashboard
+      summary: Дашборд выручки и загрузки
+      description: |
+        Выручка по дням, дата-центрам и моделям из витрины `mv_daily_revenue` (обновляется проходом биллинга,
+        время которого — `lastBillingAt`) и текущая загрузка GPU. Дни без выручки входят в ряд нулями.
+        По умолчанию — последние 30 суток по Москве, не более 366.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+          description: Начало периода, `ГГГГ-ММ-ДД`.
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+          description: Конец периода, `ГГГГ-ММ-ДД`.
+      responses:
+        '200':
+          description: Дашборд.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dashboard' }
+        '400':
+          description: Неверные параметры (`VALIDATION_ERROR`) либо некорректный период (`INVALID_PERIOD`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/prices:
+    get:
+      tags: [Администрирование]
+      operationId: adminListPrices
+      summary: История цен GPU
+      description: 'Все периоды действия цен — действующие (`validTo: null`) и закрытые.'
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Цены.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AdminPrice' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Администрирование]
+      operationId: adminSetPrice
+      summary: Установить новую цену GPU
+      description: |
+        Только по cookie. Новая цена закрывает действующую в одной транзакции (период закрывается моментом
+        `now()`, новый открывается с него же: ни пересечения, ни разрыва). Уже запущенные инстансы
+        продолжают считаться по цене, зафиксированной при запуске. Если цена не изменилась — ничего не
+        меняется, ответ `200` и `changed: false`.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetPriceRequest' }
+            example: { datacenterCode: msk-1, gpuModel: RTX 4090, pricingType: on_demand, pricePerHour: '52.0000' }
+      responses:
+        '200':
+          description: Цена такая же, как действующая, — без изменений.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetPriceResult' }
+        '201':
+          description: Новая цена установлена.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetPriceResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/prices/storage:
+    get:
+      tags: [Администрирование]
+      operationId: adminListStoragePrices
+      summary: История цен хранения
+      description: Цена за ГБ в месяц по дата-центрам, все периоды.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Цены хранения.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, datacenter, pricePerGbMonth, validFrom, validTo]
+                  properties:
+                    id: { type: integer }
+                    datacenter: { $ref: '#/components/schemas/DatacenterRef' }
+                    pricePerGbMonth: { $ref: '#/components/schemas/Money' }
+                    validFrom: { type: string, format: date-time }
+                    validTo: { type: [string, 'null'], format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/infrastructure:
+    get:
+      tags: [Администрирование]
+      operationId: adminInfrastructure
+      summary: Дата-центры, ноды и GPU
+      description: Дерево «дата-центр → нода → GPU» с признаками «включена» и «занята».
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Инфраструктура.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/InfraDatacenter' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/gpus/{id}/enable:
+    post:
+      tags: [Администрирование]
+      operationId: adminEnableGpu
+      summary: Включить GPU
+      description: 'Только по cookie. Возвращает GPU в каталог. Если она уже включена, `changed: false` и аудит не пишется.'
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Состояние GPU.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GpuToggleResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/gpus/{id}/disable:
+    post:
+      tags: [Администрирование]
+      operationId: adminDisableGpu
+      summary: Отключить GPU
+      description: Только по cookie. Отключённая GPU не выдаётся новым инстансам и не входит в число свободных.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Состояние GPU.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GpuToggleResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/nodes/{id}/status:
+    post:
+      tags: [Администрирование]
+      operationId: adminSetNodeStatus
+      summary: Сменить статус ноды
+      description: Только по cookie. Нода не в статусе `online` не принимает новые инстансы. Смена записывается в журнал аудита.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status: { $ref: '#/components/schemas/NodeStatus' }
+            example: { status: maintenance }
+      responses:
+        '200':
+          description: Статус ноды.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status, changed]
+                properties:
+                  id: { type: integer }
+                  status: { $ref: '#/components/schemas/NodeStatus' }
+                  changed: { type: boolean, description: false — статус уже был таким. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/users:
+    get:
+      tags: [Администрирование]
+      operationId: adminListUsers
+      summary: Пользователи
+      description: |
+        Список по возрастанию id. Поиск `q` — по части email или имени. Общее число подходящих записей —
+        в заголовке `X-Total-Count`.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: Часть email или имени.
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
+      responses:
+        '200':
+          description: Пользователи.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+            X-Total-Count:
+              description: Сколько всего пользователей подходит под поиск.
+              schema: { type: integer }
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AdminUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{id}/block:
+    post:
+      tags: [Администрирование]
+      operationId: adminBlockUser
+      summary: Заблокировать пользователя
+      description: |
+        Только по cookie. Правила проверяет функция БД `fn_admin_set_user_status`: себя заблокировать нельзя
+        (`409 INVALID_STATE`). Заблокированный не может войти и пользоваться API; действие попадает в аудит.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Пользователь после изменения.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/users/{id}/unblock:
+    post:
+      tags: [Администрирование]
+      operationId: adminUnblockUser
+      summary: Разблокировать пользователя
+      description: Только по cookie. Возвращает статус `active`; действие попадает в аудит.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '200':
+          description: Пользователь после изменения.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUser' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/audit:
+    get:
+      tags: [Администрирование]
+      operationId: adminAudit
+      summary: Журнал аудита
+      description: Значимые действия (цены, блокировки, платежи, ключи), новые первыми. Постраничность keyset — как у `/billing/transactions`.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: Курсор следующей страницы.
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница журнала.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEntry' }
+                  nextCursor: { type: [string, 'null'] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ------------------------------------------------------------------ Служебные
+  /health:
+    get:
+      tags: [Служебные]
+      operationId: health
+      summary: Проверка работоспособности
+      description: |
+        Без `deep` отвечает сразу, не обращаясь к БД (не будит базу, годится для частого опроса).
+        С `deep=1` выполняет `SELECT 1` и возвращает время последнего успешного прохода биллинга;
+        звать редко — например, раз в час.
+      security: []
+      parameters:
+        - name: deep
+          in: query
+          schema: { type: string, enum: ['1'] }
+          description: '`1` — проверить и базу данных.'
+      responses:
+        '200':
+          description: Сервис работает.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+              examples:
+                быстрая: { value: { status: ok, version: 4f1c2ab, time: '2026-10-28T09:30:00.000Z' } }
+                глубокая: { value: { status: ok, db: ok, version: 4f1c2ab, time: '2026-10-28T09:30:00.000Z', lastBillingAt: '2026-10-28T09:15:02.113Z' } }
+        '503':
+          description: База данных недоступна (только при `deep=1`).
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+              example: { status: error, db: down, version: 4f1c2ab, time: '2026-10-28T09:30:00.000Z', lastBillingAt: null }
+
+  /internal/billing:
+    get:
+      tags: [Служебные]
+      operationId: internalBillingGet
+      summary: Биллинг по расписанию (GET)
+      description: |
+        Полный проход биллинга для всех пользователей — то же, что `POST`. `GET` нужен Vercel Cron, который
+        умеет только его. Доступ по секрету планировщика `CRON_SECRET` в заголовке `Authorization: Bearer`.
+        Помимо начисления обновляет витрину выручки, создаёт партицию потребления на следующий месяц и
+        удаляет просроченные сессии и старые записи ограничителя попыток.
+      security:
+        - cronSecret: []
+      responses:
+        '200': { $ref: '#/components/responses/BillingPass' }
+        '401': { $ref: '#/components/responses/CronUnauthorized' }
+        '404':
+          description: Секрет не настроен, эндпоинт выключен (только вне production; `ROUTE_NOT_FOUND`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: В production секрет не задан (`CRON_NOT_CONFIGURED`) либо база недоступна.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      tags: [Служебные]
+      operationId: internalBillingPost
+      summary: Биллинг по расписанию (POST)
+      description: Тот же проход, что и `GET`. Вызывается GitHub Actions каждые 30 минут.
+      security:
+        - cronSecret: []
+      responses:
+        '200': { $ref: '#/components/responses/BillingPass' }
+        '401': { $ref: '#/components/responses/CronUnauthorized' }
+        '404':
+          description: Секрет не настроен, эндпоинт выключен (только вне production; `ROUTE_NOT_FOUND`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: В production секрет не задан (`CRON_NOT_CONFIGURED`) либо база недоступна.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /openapi.yaml:
+    get:
+      tags: [Служебные]
+      operationId: getOpenApi
+      summary: Этот документ
+      description: Описание API в формате OpenAPI 3.1 (YAML). Публичное, кэшируется.
+      security: []
+      responses:
+        '200':
+          description: Документ OpenAPI.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            application/yaml:
+              schema: { type: string }
+
+  /docs:
+    get:
+      tags: [Служебные]
+      operationId: getDocs
+      summary: Интерактивная документация
+      description: HTML-страница Swagger UI, построенная по `/openapi.yaml`. Публичная.
+      security: []
+      responses:
+        '200':
+          description: Страница документации.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CachePublic' }
+          content:
+            text/html:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sid
+      description: |
+        Cookie сессии. Выдаётся `POST /auth/login`. В production называется `__Host-sid` (браузер
+        подставляет его сам). Для запросов из Swagger UI достаточно войти через `/auth/login` на этой странице.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: gr_<ключ>
+      description: 'API-ключ, выпущенный в личном кабинете: `Authorization: Bearer gr_...`.'
+    cronSecret:
+      type: http
+      scheme: bearer
+      description: Секрет планировщика `CRON_SECRET` (не API-ключ). Нужен только для `/internal/billing`.
+
+  headers:
+    CacheNoStore:
+      description: Персональный ответ, кэшировать нельзя.
+      schema: { type: string, const: 'private, no-store' }
+    CachePublic:
+      description: Публичный ответ, CDN кэширует на 30 секунд и ещё 60 отдаёт устаревшим, пока обновляет.
+      schema: { type: string, const: 'public, s-maxage=30, stale-while-revalidate=60' }
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+      description: Числовой идентификатор.
+    UuidPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Идентификатор инстанса (UUID).
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      description: Размер страницы.
+    CsrfHeader:
+      name: X-Requested-With
+      in: header
+      required: true
+      schema: { type: string, const: fetch }
+      description: Защита от CSRF — всегда `fetch`. Вместе с ним нужен `Origin` своего сайта (браузер ставит его сам).
+    CsrfHeaderCookie:
+      name: X-Requested-With
+      in: header
+      required: false
+      schema: { type: string, const: fetch }
+      description: 'Нужен, если вы вошли по cookie (значение `fetch`), и не нужен при `Authorization: Bearer`. Вместе с ним нужен `Origin` своего сайта.'
+
+  responses:
+    BadRequest:
+      description: Неверные данные запроса. Обычно `VALIDATION_ERROR` с перечнем полей в `details`; ещё `INVALID_JSON`, `INVALID_CURSOR`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: Некорректные данные запроса
+              details:
+                - { path: email, message: Неверный формат email }
+    Unauthorized:
+      description: Нет входа (`UNAUTHORIZED`) или неверный API-ключ (`INVALID_API_KEY`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: UNAUTHORIZED, message: Требуется вход в систему } }
+    Forbidden:
+      description: |
+        Доступ запрещён: `FORBIDDEN` (не хватает прав, например клиент вызвал административную операцию),
+        `USER_BLOCKED`, `CSRF` (нет `X-Requested-With: fetch` или чужой `Origin`), `SESSION_REQUIRED`
+        (операция только по cookie).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: FORBIDDEN, message: Доступно только администратору } }
+    NotFound:
+      description: Объект не найден или принадлежит другому пользователю (`NOT_FOUND`); код не отличает эти случаи намеренно.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: NOT_FOUND, message: Объект не найден } }
+    Conflict:
+      description: Операция недопустима в текущем состоянии объекта (`INVALID_STATE`) либо конфликт данных (`CONFLICT`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: INVALID_STATE, message: Операция недопустима в текущем состоянии объекта } }
+    Unprocessable:
+      description: Данные верны по формату, но не согласованы с остальными (`CONSISTENCY`, `VALIDATION`) — например, том из другого дата-центра.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: CONSISTENCY, message: Данные запроса не согласованы между собой } }
+    TooManyRequests:
+      description: Слишком много попыток. Повторить можно через `Retry-After` секунд.
+      headers:
+        Retry-After:
+          description: Через сколько секунд повторить.
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: TOO_MANY_REQUESTS, message: Слишком много попыток. Повторите через 600 с } }
+    ServiceUnavailable:
+      description: База данных временно недоступна (`DB_UNAVAILABLE`) или запрос слишком долгий (`TIMEOUT`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: DB_UNAVAILABLE, message: База данных временно недоступна } }
+    CronUnauthorized:
+      description: Нет секрета или он неверный (`INVALID_CRON_SECRET`).
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, const: Bearer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: INVALID_CRON_SECRET, message: Неверный секрет планировщика } }
+    BillingPass:
+      description: Проход выполнен.
+      headers:
+        Cache-Control: { $ref: '#/components/headers/CacheNoStore' }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [users, records, charged, stopped, cleaned]
+            properties:
+              users: { type: integer, description: У скольких пользователей что-то начислено. }
+              records: { type: integer, description: Сколько записей потребления создано. }
+              charged:
+                type: string
+                description: Сумма списаний за проход.
+                examples: ['418.2000']
+              stopped: { type: integer, description: Сколько инстансов автоматически остановлено. }
+              cleaned:
+                type: object
+                description: Сколько записей удалено при обслуживании.
+                required: [sessions, attempts, tokens, runs]
+                properties:
+                  sessions: { type: integer, description: Просроченные сессии. }
+                  attempts: { type: integer, description: Старые записи ограничителя попыток входа. }
+                  tokens: { type: integer, description: Токены подтверждения email. }
+                  runs: { type: integer, description: Старые записи о проходах биллинга. }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Стабильный код для программы (`NO_CAPACITY`, `INSUFFICIENT_FUNDS`, `VALIDATION_ERROR`...).
+            message:
+              type: string
+              description: Текст по-русски, безопасный для показа пользователю.
+            details:
+              type: array
+              description: Только у `VALIDATION_ERROR` — какие поля не прошли проверку.
+              items:
+                type: object
+                required: [path, message]
+                properties:
+                  path: { type: string, description: Имя поля (для вложенных — через точку). }
+                  message: { type: string }
+
+    Money:
+      type: string
+      pattern: '^-?\d+(\.\d+)?$'
+      description: Денежная сумма в рублях десятичной строкой с четырьмя знаками.
+      examples: ['1234.5600']
+
+    Role:
+      type: string
+      enum: [client, admin]
+    UserStatus:
+      type: string
+      enum: [active, blocked]
+    NodeStatus:
+      type: string
+      enum: [online, maintenance, offline]
+    PricingType:
+      type: string
+      enum: [on_demand, spot]
+      description: '`on_demand` — гарантированный запуск, `spot` — дешевле.'
+    PaymentStatus:
+      type: string
+      enum: [pending, succeeded, failed, refunded]
+    InstanceStatus:
+      type: string
+      enum: [pending, running, stopped, terminated, failed]
+
+    User:
+      type: object
+      required: [id, email, fullName, role, status, balance, emailVerified]
+      properties:
+        id: { type: integer }
+        email: { type: string, format: email }
+        fullName: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { $ref: '#/components/schemas/UserStatus' }
+        balance: { $ref: '#/components/schemas/Money' }
+        emailVerified: { type: boolean }
+      example: { id: 2, email: demo@gpu-rent.example, fullName: Демо Клиент, role: client, status: active, balance: '1520.7500', emailVerified: true }
+
+    AdminUser:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          required: [createdAt]
+          properties:
+            createdAt: { type: string, format: date-time }
+
+    RegisterRequest:
+      type: object
+      required: [email, password, fullName]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, minLength: 3, maxLength: 254, description: Приводится к нижнему регистру. }
+        password: { type: string, minLength: 8, description: 'Не короче 8 символов и не длиннее 72 байт (ограничение bcrypt).' }
+        fullName: { type: string, minLength: 2, maxLength: 120 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1, maxLength: 200 }
+
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      additionalProperties: false
+      properties:
+        currentPassword: { type: string, minLength: 1, maxLength: 200 }
+        newPassword: { type: string, minLength: 8, description: 'Не короче 8 символов и не длиннее 72 байт.' }
+
+    DatacenterRef:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string, examples: [msk-1] }
+        name: { type: string }
+
+    Datacenter:
+      allOf:
+        - $ref: '#/components/schemas/DatacenterRef'
+        - type: object
+          required: [city]
+          properties:
+            city: { type: string }
+
+    GpuOffer:
+      type: object
+      required: [datacenter, model, total, free, priceOnDemand, priceSpot]
+      properties:
+        datacenter: { $ref: '#/components/schemas/Datacenter' }
+        model:
+          type: object
+          required: [name, vramGb]
+          properties:
+            name: { type: string, examples: [RTX 4090] }
+            vramGb: { type: integer }
+        total: { type: integer, description: Всего GPU этой модели в дата-центре. }
+        free: { type: integer, description: Свободно сейчас (с задержкой кэша до 30 с). }
+        priceOnDemand:
+          oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+          description: Цена за GPU в час; null, если цены нет.
+        priceSpot:
+          oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }]
+          description: Цена spot за GPU в час; null, если цены нет.
+
+    Template:
+      type: object
+      required: [id, name, dockerImage, defaultDiskGb, defaultPorts, isPublic]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        dockerImage: { type: string, examples: ['pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime'] }
+        defaultDiskGb: { type: integer }
+        defaultPorts: { type: string, description: 'Порты через запятую, например `22/tcp,8888/http`; может быть пустой строкой.' }
+        isPublic: { type: boolean }
+
+    TemplateRequest:
+      type: object
+      required: [name, dockerImage, defaultDiskGb]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        dockerImage:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._\-/:@]*$'
+          description: Имя образа «репозиторий/образ:тег» без пробелов и схемы.
+        defaultDiskGb: { type: integer, minimum: 10, maximum: 2000 }
+        defaultPorts:
+          type: string
+          maxLength: 100
+          pattern: '^$|^\d{1,5}/(tcp|http)(,\d{1,5}/(tcp|http))*$'
+          default: ''
+          description: 'Порты в формате `22/tcp,8888/http`.'
+
+    SshKey:
+      type: object
+      required: [id, name, fingerprint, publicKey, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        fingerprint: { type: string, examples: ['SHA256:u0D3...'] }
+        publicKey: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    SshKeyRequest:
+      type: object
+      required: [name, publicKey]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        publicKey:
+          type: string
+          minLength: 20
+          maxLength: 4000
+          description: 'Публичный ключ OpenSSH одной строкой: `ssh-ed25519 AAAA... комментарий`.'
+
+    ApiKey:
+      type: object
+      required: [id, name, prefix, createdAt, lastUsedAt, expiresAt, revokedAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        prefix: { type: string, description: Начало ключа для опознания в списке. }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+
+    ApiKeyRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        expiresAt:
+          type: string
+          format: date-time
+          description: Срок действия (ISO 8601 с часовым поясом), обязательно в будущем. Без него ключ бессрочный.
+
+    Instance:
+      type: object
+      required: [id, name, status, datacenter, gpuModel, gpuCount, pricingType, pricePerHour, containerDiskGb, template, volume, sshKey, envNames, createdAt, startedAt, stoppedAt, terminatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/InstanceStatus' }
+        datacenter: { $ref: '#/components/schemas/Datacenter' }
+        gpuModel: { type: string }
+        gpuCount: { type: integer, minimum: 1, maximum: 8 }
+        pricingType: { $ref: '#/components/schemas/PricingType' }
+        pricePerHour:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Цена всего инстанса в час (за все GPU), зафиксированная в момент запуска или возобновления.
+        containerDiskGb: { type: integer }
+        template:
+          type: [object, 'null']
+          required: [id, name]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        volume:
+          type: [object, 'null']
+          required: [id, name, sizeGb]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            sizeGb: { type: integer }
+        sshKey:
+          type: [object, 'null']
+          required: [id, name]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        envNames:
+          type: array
+          items: { type: string }
+          description: Имена переменных окружения. Значения наружу не отдаются никогда.
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        stoppedAt: { type: [string, 'null'], format: date-time }
+        terminatedAt: { type: [string, 'null'], format: date-time }
+        owner:
+          type: object
+          description: Владелец. Только для администратора (при `?all=1` и в карточке инстанса).
+          required: [id, email]
+          properties:
+            id: { type: integer }
+            email: { type: string }
+
+    CreateInstanceRequest:
+      type: object
+      required: [name, datacenterCode, gpuModel, gpuCount, pricingType, templateId]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        datacenterCode: { type: string, pattern: '^[A-Za-z0-9-]{2,16}$', examples: [msk-1], description: Код из `/catalog/gpus`. }
+        gpuModel: { type: string, minLength: 1, maxLength: 64, examples: [RTX 4090], description: Название модели из `/catalog/gpus`. }
+        gpuCount: { type: integer, minimum: 1, maximum: 8 }
+        pricingType: { $ref: '#/components/schemas/PricingType' }
+        templateId: { type: integer, minimum: 1, description: Публичный или свой шаблон. }
+        containerDiskGb:
+          type: integer
+          minimum: 10
+          maximum: 2000
+          description: Размер диска контейнера; если не указан, берётся из шаблона.
+        volumeId: { type: integer, minimum: 1, description: Свободный том в том же дата-центре. }
+        sshKeyId: { type: integer, minimum: 1 }
+        env:
+          type: object
+          maxProperties: 30
+          description: Переменные окружения «ИМЯ → значение», не более 30. Значения хранятся зашифрованными.
+          propertyNames: { pattern: '^[A-Za-z_][A-Za-z0-9_]*$', maxLength: 64 }
+          additionalProperties: { type: string, maxLength: 2000 }
+
+    Volume:
+      type: object
+      required: [id, name, sizeGb, datacenter, status, attachedTo, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        sizeGb: { type: integer }
+        datacenter: { $ref: '#/components/schemas/DatacenterRef' }
+        status:
+          type: string
+          enum: [active, deleted]
+        attachedTo:
+          type: [object, 'null']
+          description: Инстанс, к которому подключён том (в том числе остановленный); null — том свободен.
+          required: [id, name]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    CreateVolumeRequest:
+      type: object
+      required: [name, datacenterCode, sizeGb]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        datacenterCode: { type: string, pattern: '^[A-Za-z0-9-]{2,16}$' }
+        sizeGb: { type: integer, minimum: 10, maximum: 10000 }
+
+    Transaction:
+      type: object
+      required: [id, type, amount, description, createdAt]
+      properties:
+        id: { type: integer }
+        type:
+          type: string
+          enum: [topup, charge, refund, bonus, adjustment]
+        amount:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Пополнение — положительная сумма, списание — отрицательная.
+        description: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    Spend:
+      type: object
+      required: [from, to, total, storage, byDay, byInstance]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        total: { $ref: '#/components/schemas/Money' }
+        storage: { $ref: '#/components/schemas/Money' }
+        byDay:
+          type: array
+          items:
+            type: object
+            required: [day, amount]
+            properties:
+              day: { type: string, format: date }
+              amount: { $ref: '#/components/schemas/Money' }
+        byInstance:
+          type: array
+          description: По убыванию суммы.
+          items:
+            type: object
+            required: [instanceId, name, amount]
+            properties:
+              instanceId: { type: string, format: uuid }
+              name: { type: string }
+              amount: { $ref: '#/components/schemas/Money' }
+
+    Payment:
+      type: object
+      required: [id, amount, status, createdAt, paidAt]
+      properties:
+        id: { type: integer }
+        amount: { $ref: '#/components/schemas/Money' }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        createdAt: { type: string, format: date-time }
+        paidAt: { type: [string, 'null'], format: date-time }
+
+    Dashboard:
+      type: object
+      required: [revenueByDay, revenueByDatacenter, revenueByModel, utilization, utilizationByDatacenter, utilizationByModel, period, lastBillingAt]
+      properties:
+        revenueByDay:
+          type: array
+          items:
+            type: object
+            required: [day, revenue, gpuHours]
+            properties:
+              day: { type: string, format: date }
+              revenue: { $ref: '#/components/schemas/Money' }
+              gpuHours: { type: string, description: GPU-часов за день. }
+        revenueByDatacenter:
+          type: array
+          items:
+            type: object
+            required: [code, name, revenue]
+            properties:
+              code: { type: string }
+              name: { type: string }
+              revenue: { $ref: '#/components/schemas/Money' }
+        revenueByModel:
+          type: array
+          items:
+            type: object
+            required: [name, revenue]
+            properties:
+              name: { type: string }
+              revenue: { $ref: '#/components/schemas/Money' }
+        utilization: { $ref: '#/components/schemas/Utilization' }
+        utilizationByDatacenter:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Utilization'
+              - type: object
+                required: [code, name]
+                properties:
+                  code: { type: string }
+                  name: { type: string }
+        utilizationByModel:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Utilization'
+              - type: object
+                required: [name]
+                properties:
+                  name: { type: string }
+        period:
+          type: object
+          required: [from, to, revenue, gpuHours]
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+            revenue: { $ref: '#/components/schemas/Money' }
+            gpuHours: { type: string }
+        lastBillingAt:
+          type: [string, 'null']
+          format: date-time
+          description: Когда последний раз успешно прошёл биллинг (витрина выручки не новее этого момента).
+
+    Utilization:
+      type: object
+      required: [total, busy, free, disabled]
+      properties:
+        total: { type: integer, description: Всего GPU. }
+        busy: { type: integer, description: Заняты инстансами. }
+        free: { type: integer, description: Свободны и доступны к запуску. }
+        disabled: { type: integer, description: Отключены администратором. }
+
+    AdminPrice:
+      type: object
+      required: [id, datacenter, gpuModel, pricingType, pricePerHour, validFrom, validTo]
+      properties:
+        id: { type: integer }
+        datacenter: { $ref: '#/components/schemas/DatacenterRef' }
+        gpuModel: { type: string }
+        pricingType: { $ref: '#/components/schemas/PricingType' }
+        pricePerHour: { $ref: '#/components/schemas/Money' }
+        validFrom: { type: string, format: date-time }
+        validTo:
+          type: [string, 'null']
+          format: date-time
+          description: null — цена действует сейчас.
+
+    SetPriceRequest:
+      type: object
+      required: [datacenterCode, gpuModel, pricingType, pricePerHour]
+      additionalProperties: false
+      properties:
+        datacenterCode: { type: string, pattern: '^[A-Za-z0-9-]{2,16}$' }
+        gpuModel: { type: string, minLength: 1, maxLength: 64 }
+        pricingType: { $ref: '#/components/schemas/PricingType' }
+        pricePerHour:
+          type: [string, number]
+          description: Цена за одну GPU в час, ₽, от 0.01 до 100000, до 4 знаков после запятой. Лучше строкой.
+          examples: ['52.0000']
+
+    SetPriceResult:
+      type: object
+      required: [changed, price]
+      properties:
+        changed: { type: boolean, description: false — такая цена уже действовала, ничего не менялось. }
+        price: { $ref: '#/components/schemas/AdminPrice' }
+
+    InfraDatacenter:
+      type: object
+      required: [code, name, city, nodes]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        city: { type: string }
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [id, hostname, status, cpuCores, ramGb, gpus]
+            properties:
+              id: { type: integer }
+              hostname: { type: string }
+              status: { $ref: '#/components/schemas/NodeStatus' }
+              cpuCores: { type: integer }
+              ramGb: { type: integer }
+              gpus:
+                type: array
+                items:
+                  type: object
+                  required: [id, slot, serial, model, isEnabled, busy]
+                  properties:
+                    id: { type: integer }
+                    slot: { type: integer }
+                    serial: { type: string }
+                    model: { type: string }
+                    isEnabled: { type: boolean }
+                    busy: { type: boolean, description: Занята работающим инстансом. }
+
+    GpuToggleResult:
+      type: object
+      required: [id, isEnabled, changed]
+      properties:
+        id: { type: integer }
+        isEnabled: { type: boolean }
+        changed: { type: boolean, description: false — GPU уже была в этом состоянии. }
+
+    AuditEntry:
+      type: object
+      required: [id, action, entity, entityId, actor, details, ip, createdAt]
+      properties:
+        id: { type: integer }
+        action: { type: string, examples: [payment.credited] }
+        entity: { type: string, examples: [payments] }
+        entityId: { type: [string, 'null'] }
+        actor:
+          type: [object, 'null']
+          description: Кто выполнил действие; null — система.
+          required: [id, email]
+          properties:
+            id: { type: integer }
+            email: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+        ip: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+
+    Health:
+      type: object
+      required: [status, version, time]
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        db:
+          type: string
+          enum: [ok, down]
+          description: Только при `deep=1`.
+        version: { type: string, description: Короткий хэш коммита сборки либо `1.0.0` локально. }
+        time: { type: string, format: date-time }
+        lastBillingAt:
+          type: [string, 'null']
+          format: date-time
+          description: Только при `deep=1`. Время последнего успешного прохода биллинга.

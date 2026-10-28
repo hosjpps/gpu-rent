@@ -1,0 +1,41 @@
+{
+  "name": "gpu-rent-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Серверная часть GPU Rent: монолит на Express, бизнес-логика — в функциях PostgreSQL",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "load": "node test/load/run.mjs"
+  },
+  "dependencies": {
+    "@vercel/functions": "3.4.3",
+    "bcryptjs": "3.0.3",
+    "express": "4.22.3",
+    "helmet": "8.1.0",
+    "pg": "8.16.3",
+    "pino": "9.14.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "4.17.25",
+    "@types/node": "20.19.25",
+    "@types/pg": "8.15.6",
+    "@types/supertest": "6.0.3",
+    "autocannon": "8.0.0",
+    "supertest": "7.1.4",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4",
+    "yaml": "2.8.1"
+  }
+}

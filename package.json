@@ -1,0 +1,19 @@
+{
+  "name": "gpu-rent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GPU Rent: сервис аренды GPU-серверов (сервер, клиент, база данных)",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "install:all": "npm ci --prefix server && npm ci --prefix web",
+    "dev": "trap 'kill 0' INT TERM; npm run dev:server & npm run dev:web & wait",
+    "dev:server": "cd server && set -a && . ./.env && set +a && npm run dev",
+    "dev:web": "npm run dev --prefix web",
+    "build": "npm ci --include=dev --prefix web && npm run build --prefix web",
+    "typecheck": "npm run typecheck --prefix server && npm run typecheck --prefix web",
+    "test": "npm test --prefix server"
+  }
+}

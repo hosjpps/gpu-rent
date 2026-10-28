@@ -4,5 +4,11 @@ __pycache__/
 .venv/
 node_modules/
 .env
+.env.*
+!.env.example
 build/
 ~$*
+dist/
+.vercel/
+test-results/
+playwright-report/
