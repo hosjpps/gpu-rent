@@ -93,8 +93,9 @@ export function authRoutes(config: Config): Router {
     '/login',
     wrap(async (req, res) => {
       const body = parse(loginBody, req.body);
-      // Жёсткий лимит — на пару «email + адрес»: иначе любой, знающий чужой email, мог бы запереть его владельца
-      // десятью неверными попытками. Общий лимит на email высокий и защищает только от подбора с множества адресов.
+      // Лимиты считают попытки до проверки пароля, а успешный вход обнуляет счётчики: тратят бюджет только неудачи.
+      // Пара «email + адрес» ограничена жёстче общего счётчика email: иначе любой, знающий чужой email, мог бы
+      // запереть владельца неверными попытками с одного адреса. Общий счётчик — для подбора с множества адресов.
       const ip = req.ip ?? 'unknown';
       await throttle('login_ip', ip, config.limits.loginIp);
       await throttle('login_email_ip', `${body.email}|${ip}`, config.limits.loginEmailIp);
@@ -107,7 +108,7 @@ export function authRoutes(config: Config): Router {
       const ok = await verifyPassword(body.password, row?.o_password_hash);
       if (!row || !ok) throw unauthorized('Неверный email или пароль', 'INVALID_CREDENTIALS');
       if (row.o_status !== 'active') throw forbidden('Учётная запись заблокирована', 'USER_BLOCKED');
-      await query('SELECT fn_auth_throttle_clear($1, $2)', ['login_email_ip', `${body.email}|${ip}`]);
+      await query('SELECT fn_auth_throttle_clear($1, $2), fn_auth_throttle_clear($3, $4)', ['login_email_ip', `${body.email}|${ip}`, 'login_email', body.email]);
       await startSession(req, res, row.o_id);
       res.set('Cache-Control', NO_STORE);
       res.json({ user: await loadUser(row.o_id) });

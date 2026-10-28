@@ -311,15 +311,15 @@ describe('странные cookie и заголовки', () => {
 });
 
 describe('ограничение частоты входа', () => {
-  it('после 10 неверных попыток с одного адреса — 429 с Retry-After, даже с верным паролем; другой email не затронут', async () => {
+  it('после 5 неверных попыток с одного адреса — 429 с Retry-After, даже с верным паролем; другой email не затронут', async () => {
     const u = await newUser(app, { login: false });
     const other = await newUser(app, { login: false });
     const ip = randomIp();
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= 5; i++) {
       const r = await new Api(app, ip).post('/api/auth/login', { email: u.email, password: `wrong-${i}-password` });
       expect(r.status, `попытка ${i}`).toBe(401);
     }
-    const blocked = await new Api(app, ip).post('/api/auth/login', { email: u.email, password: `wrong-11-password` });
+    const blocked = await new Api(app, ip).post('/api/auth/login', { email: u.email, password: `wrong-6-password` });
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('TOO_MANY_REQUESTS');
     const retry = Number(blocked.headers['retry-after']);
@@ -336,7 +336,7 @@ describe('ограничение частоты входа', () => {
   it('чужой адрес не может запереть владельца: неверные попытки с другого IP не мешают войти с верным паролем', async () => {
     const victim = await newUser(app, { login: false });
     const attacker = randomIp();
-    for (let i = 1; i <= 12; i++) {
+    for (let i = 1; i <= 8; i++) {
       await new Api(app, attacker).post('/api/auth/login', { email: victim.email, password: `wrong-${i}-password` });
     }
     expect((await new Api(app, attacker).post('/api/auth/login', { email: victim.email, password: victim.password })).status).toBe(429);
@@ -357,15 +357,24 @@ describe('ограничение частоты входа', () => {
   it('успешный вход сбрасывает счётчик неудач', async () => {
     const u = await newUser(app, { login: false });
     const ip = randomIp();
-    for (let i = 0; i < 9; i++) expect((await new Api(app, ip).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' })).status).toBe(401);
+    for (let i = 0; i < 4; i++) expect((await new Api(app, ip).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' })).status).toBe(401);
     expect((await new Api(app, ip).post('/api/auth/login', { email: u.email, password: u.password })).status).toBe(200);
-    for (let i = 0; i < 9; i++) expect((await new Api(app, ip).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' })).status).toBe(401);
+    for (let i = 0; i < 4; i++) expect((await new Api(app, ip).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' })).status).toBe(401);
+  });
+
+  it('успешный вход владельца сбрасывает и общий счётчик email: чужие неудачи не копятся против него', async () => {
+    const limited = makeApp({ AUTH_LOGIN_EMAIL_MAX: '6', AUTH_LOGIN_EMAIL_IP_MAX: '100' });
+    const u = await newUser(limited, { login: false });
+    for (let i = 1; i <= 5; i++) await new Api(limited, randomIp()).post('/api/auth/login', { email: u.email, password: `wrong-${i}-password` });
+    expect((await new Api(limited, randomIp()).post('/api/auth/login', { email: u.email, password: u.password })).status).toBe(200);
+    // счётчик обнулён: впереди снова полный бюджет неудач
+    for (let i = 1; i <= 5; i++) expect((await new Api(limited, randomIp()).post('/api/auth/login', { email: u.email, password: `wrong-${i}-password` })).status).toBe(401);
   });
 
   it('счётчик живёт в БД, а не в памяти приложения: второй экземпляр приложения видит те же попытки', async () => {
     const u = await newUser(app, { login: false });
     const ip = randomIp();
-    for (let i = 0; i < 10; i++) await new Api(app, ip).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' });
+    for (let i = 0; i < 5; i++) await new Api(app, ip).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' });
     const secondInstance = makeApp();
     const res = await new Api(secondInstance, ip).post('/api/auth/login', { email: u.email, password: u.password });
     expect(res.status).toBe(429);

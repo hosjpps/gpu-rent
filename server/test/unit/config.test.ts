@@ -21,8 +21,8 @@ describe('loadConfig', () => {
     expect(c.cookieName).toBe('sid');
     expect(c.sessionTtlSeconds).toBe(7 * 24 * 3600);
     expect(c.trustProxy).toBe(false);
-    expect(c.limits.loginEmail).toEqual({ max: 50, windowSeconds: 900 });
-    expect(c.limits.loginEmailIp).toEqual({ max: 10, windowSeconds: 900 });
+    expect(c.limits.loginEmail).toEqual({ max: 20, windowSeconds: 900 });
+    expect(c.limits.loginEmailIp).toEqual({ max: 5, windowSeconds: 900 });
     expect(c.limits.registerIp).toEqual({ max: 10, windowSeconds: 3600 });
   });
 

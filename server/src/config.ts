@@ -25,7 +25,7 @@ export interface Config {
   sessionTtlSeconds: number;
   trustProxy: boolean | number;
   limits: {
-    /** Все попытки на один email, с любых адресов: защита от распределённого подбора, лимит высокий. */
+    /** Все попытки на один email, с любых адресов: защита от распределённого подбора. Выше лимита пары, чтобы один адрес не мог запереть владельца. */
     loginEmail: RateLimit;
     /** Попытки на пару «email + адрес клиента»: чужой адрес не может запереть владельца аккаунта. */
     loginEmailIp: RateLimit;
@@ -67,8 +67,8 @@ const envSchema = z.object({
   COOKIE_SECURE: z.string().optional(),
   DB_POOL_MAX: int('DB_POOL_MAX', 2),
   LOG_LEVEL: z.string().default('info'),
-  AUTH_LOGIN_EMAIL_MAX: int('AUTH_LOGIN_EMAIL_MAX', 50),
-  AUTH_LOGIN_EMAIL_IP_MAX: int('AUTH_LOGIN_EMAIL_IP_MAX', 10),
+  AUTH_LOGIN_EMAIL_MAX: int('AUTH_LOGIN_EMAIL_MAX', 20),
+  AUTH_LOGIN_EMAIL_IP_MAX: int('AUTH_LOGIN_EMAIL_IP_MAX', 5),
   AUTH_LOGIN_IP_MAX: int('AUTH_LOGIN_IP_MAX', 60),
   AUTH_REGISTER_IP_MAX: int('AUTH_REGISTER_IP_MAX', 10),
 });
