@@ -617,5 +617,17 @@ $$;
 
 COMMIT;
 
-ANALYZE;
+-- Только таблицы схемы: голый ANALYZE задевает и системные каталоги, а без суперпользователя (Neon) это даёт
+-- «permission denied to analyze» по каждому из них
+DO $$
+DECLARE
+    t regclass;
+BEGIN
+    FOR t IN SELECT c.oid::regclass FROM pg_class c
+             WHERE c.relnamespace = 'gpu_rent'::regnamespace AND c.relkind IN ('r', 'p', 'm') AND NOT c.relispartition
+    LOOP
+        EXECUTE format('ANALYZE %s', t);
+    END LOOP;
+END
+$$;
 REFRESH MATERIALIZED VIEW mv_daily_revenue;

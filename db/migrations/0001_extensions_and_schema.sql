@@ -1,5 +1,6 @@
 -- 0001: расширения, схема gpu_rent, роли кластера, журнал версий миграций.
--- Выполняется суперпользователем: CREATE EXTENSION и создание ролей требуют прав выше обычных.
+-- Выполняется суперпользователем (локально) либо владельцем БД с CREATEROLE и членством в gpu_rent_owner
+-- WITH INHERIT, SET (Neon, см. db/scripts/bootstrap_neon.sh): pgcrypto, btree_gist и citext — trusted-расширения.
 -- pg_stat_statements не создаётся: расширению нужен shared_preload_libraries и перезапуск
 -- сервера, это настройка окружения (см. раздел эксплуатации), а не схемы БД.
 BEGIN;
