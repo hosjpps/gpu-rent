@@ -1,0 +1,31 @@
+{
+  "name": "gpu-rent-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Клиентская часть сервиса аренды GPU (SPA)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "build": "tsc --noEmit -p tsconfig.json && vite build && node scripts/sizes.mjs",
+    "preview": "vite preview",
+    "sizes": "node scripts/sizes.mjs",
+    "e2e": "playwright test",
+    "e2e:screenshots": "SCREENSHOTS=1 playwright test"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.105.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^20.19.43",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.7"
+  }
+}
