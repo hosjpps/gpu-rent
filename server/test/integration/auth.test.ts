@@ -311,39 +311,63 @@ describe('странные cookie и заголовки', () => {
 });
 
 describe('ограничение частоты входа', () => {
-  it('после 10 неверных попыток на email — 429 с Retry-After, даже с верным паролем; другой email не затронут', async () => {
+  it('после 10 неверных попыток с одного адреса — 429 с Retry-After, даже с верным паролем; другой email не затронут', async () => {
     const u = await newUser(app, { login: false });
     const other = await newUser(app, { login: false });
+    const ip = randomIp();
     for (let i = 1; i <= 10; i++) {
-      const r = await new Api(app).post('/api/auth/login', { email: u.email, password: `wrong-${i}-password` });
+      const r = await new Api(app, ip).post('/api/auth/login', { email: u.email, password: `wrong-${i}-password` });
       expect(r.status, `попытка ${i}`).toBe(401);
     }
-    const blocked = await new Api(app).post('/api/auth/login', { email: u.email, password: `wrong-11-password` });
+    const blocked = await new Api(app, ip).post('/api/auth/login', { email: u.email, password: `wrong-11-password` });
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('TOO_MANY_REQUESTS');
     const retry = Number(blocked.headers['retry-after']);
     expect(retry).toBeGreaterThan(0);
     expect(retry).toBeLessThanOrEqual(900);
 
-    const correct = await new Api(app).post('/api/auth/login', { email: u.email, password: u.password });
+    const correct = await new Api(app, ip).post('/api/auth/login', { email: u.email, password: u.password });
     expect(correct.status).toBe(429); // подбор не должен «выиграть» после лимита
 
-    const fine = await new Api(app).post('/api/auth/login', { email: other.email, password: other.password });
+    const fine = await new Api(app, ip).post('/api/auth/login', { email: other.email, password: other.password });
     expect(fine.status).toBe(200);
+  });
+
+  it('чужой адрес не может запереть владельца: неверные попытки с другого IP не мешают войти с верным паролем', async () => {
+    const victim = await newUser(app, { login: false });
+    const attacker = randomIp();
+    for (let i = 1; i <= 12; i++) {
+      await new Api(app, attacker).post('/api/auth/login', { email: victim.email, password: `wrong-${i}-password` });
+    }
+    expect((await new Api(app, attacker).post('/api/auth/login', { email: victim.email, password: victim.password })).status).toBe(429);
+    // владелец с обычного для него адреса входит без помех
+    expect((await new Api(app, randomIp()).post('/api/auth/login', { email: victim.email, password: victim.password })).status).toBe(200);
+  });
+
+  it('общий лимит на email с разных адресов защищает от распределённого подбора', async () => {
+    const limited = makeApp({ AUTH_LOGIN_EMAIL_MAX: '5', AUTH_LOGIN_EMAIL_IP_MAX: '100' });
+    const u = await newUser(limited, { login: false });
+    for (let i = 1; i <= 5; i++) {
+      expect((await new Api(limited, randomIp()).post('/api/auth/login', { email: u.email, password: `wrong-${i}-password` })).status).toBe(401);
+    }
+    const blocked = await new Api(limited, randomIp()).post('/api/auth/login', { email: u.email, password: u.password });
+    expect(blocked.status).toBe(429);
   });
 
   it('успешный вход сбрасывает счётчик неудач', async () => {
     const u = await newUser(app, { login: false });
-    for (let i = 0; i < 9; i++) expect((await new Api(app).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' })).status).toBe(401);
-    expect((await new Api(app).post('/api/auth/login', { email: u.email, password: u.password })).status).toBe(200);
-    for (let i = 0; i < 9; i++) expect((await new Api(app).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' })).status).toBe(401);
+    const ip = randomIp();
+    for (let i = 0; i < 9; i++) expect((await new Api(app, ip).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' })).status).toBe(401);
+    expect((await new Api(app, ip).post('/api/auth/login', { email: u.email, password: u.password })).status).toBe(200);
+    for (let i = 0; i < 9; i++) expect((await new Api(app, ip).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' })).status).toBe(401);
   });
 
   it('счётчик живёт в БД, а не в памяти приложения: второй экземпляр приложения видит те же попытки', async () => {
     const u = await newUser(app, { login: false });
-    for (let i = 0; i < 10; i++) await new Api(app).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' });
+    const ip = randomIp();
+    for (let i = 0; i < 10; i++) await new Api(app, ip).post('/api/auth/login', { email: u.email, password: 'wrong-password-x' });
     const secondInstance = makeApp();
-    const res = await new Api(secondInstance).post('/api/auth/login', { email: u.email, password: u.password });
+    const res = await new Api(secondInstance, ip).post('/api/auth/login', { email: u.email, password: u.password });
     expect(res.status).toBe(429);
   });
 
@@ -406,6 +430,28 @@ describe('смена пароля', () => {
 
     const audit = await sql("SELECT 1 FROM audit_log WHERE action = 'user.password_changed' AND actor_user_id = $1", [u.id]);
     expect(audit.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('отзывает действующие API-ключи, сообщает их число и пишет его в аудит; ключи других пользователей целы', async () => {
+    const u = await newUser(app);
+    const stranger = await newUser(app);
+    const keys: string[] = [];
+    for (const name of ['ci', 'bot']) keys.push((await u.api.post('/api/api-keys', { name })).body.key);
+    const strangerKey: string = (await stranger.api.post('/api/api-keys', { name: 'ci' })).body.key;
+    const bearer = (k: string): Api => Object.assign(new Api(app), { bearer: k });
+    for (const k of keys) expect((await bearer(k).get('/api/auth/me')).status).toBe(200);
+
+    const res = await u.api.post('/api/auth/password', { currentPassword: u.password, newPassword: 'brand-new-password-1' });
+    expect(res.status).toBe(200);
+    expect(res.body.apiKeysRevoked).toBe(2);
+    for (const k of keys) expect((await bearer(k).get('/api/auth/me')).status, 'отозванный ключ').toBe(401);
+    expect((await bearer(strangerKey).get('/api/auth/me')).status).toBe(200);
+
+    const audit = await sql<{ details: { api_keys_revoked: number } }>("SELECT details FROM audit_log WHERE action = 'user.password_changed' AND actor_user_id = $1 ORDER BY id DESC LIMIT 1", [u.id]);
+    expect(audit[0]!.details.api_keys_revoked).toBe(2);
+
+    const none = await u.api.post('/api/auth/password', { currentPassword: 'brand-new-password-1', newPassword: 'brand-new-password-2' });
+    expect(none.body.apiKeysRevoked).toBe(0);
   });
 
   it('неверный текущий пароль — 401, сессии остаются, пароль прежний', async () => {

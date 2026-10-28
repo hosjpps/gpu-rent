@@ -93,7 +93,11 @@ export function authRoutes(config: Config): Router {
     '/login',
     wrap(async (req, res) => {
       const body = parse(loginBody, req.body);
-      await throttle('login_ip', req.ip ?? 'unknown', config.limits.loginIp);
+      // Жёсткий лимит — на пару «email + адрес»: иначе любой, знающий чужой email, мог бы запереть его владельца
+      // десятью неверными попытками. Общий лимит на email высокий и защищает только от подбора с множества адресов.
+      const ip = req.ip ?? 'unknown';
+      await throttle('login_ip', ip, config.limits.loginIp);
+      await throttle('login_email_ip', `${body.email}|${ip}`, config.limits.loginEmailIp);
       await throttle('login_email', body.email, config.limits.loginEmail);
       const r = await query<{ o_id: number; o_password_hash: string; o_status: 'active' | 'blocked' }>(
         'SELECT * FROM fn_web_user_by_email($1)',
@@ -103,7 +107,7 @@ export function authRoutes(config: Config): Router {
       const ok = await verifyPassword(body.password, row?.o_password_hash);
       if (!row || !ok) throw unauthorized('Неверный email или пароль', 'INVALID_CREDENTIALS');
       if (row.o_status !== 'active') throw forbidden('Учётная запись заблокирована', 'USER_BLOCKED');
-      await query('SELECT fn_auth_throttle_clear($1, $2)', ['login_email', body.email]);
+      await query('SELECT fn_auth_throttle_clear($1, $2)', ['login_email_ip', `${body.email}|${ip}`]);
       await startSession(req, res, row.o_id);
       res.set('Cache-Control', NO_STORE);
       res.json({ user: await loadUser(row.o_id) });
@@ -159,18 +163,25 @@ export function authRoutes(config: Config): Router {
       const hash = await hashPassword(body.newPassword, config.bcryptCost);
       const token = newToken();
       // Все прежние сессии пользователя удаляются, текущему браузеру выдаётся новая: старый токен мог быть украден.
-      const r = await withUser(userCtx(req), (c) =>
-        c.query<{ expires: Date }>('SELECT fn_web_set_password($1, $2, $3, $4, $5) AS expires', [
+      // API-ключи тоже отзываются (это делает fn_web_set_password): ключ, выпущенный из украденной сессии,
+      // иначе пережил бы смену пароля. Число считаем в той же транзакции, чтобы показать его пользователю.
+      const r = await withUser(userCtx(req), async (c) => {
+        const keys = await c.query<{ n: number }>(
+          'SELECT count(*)::int AS n FROM api_keys WHERE user_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())',
+          [user.id],
+        );
+        const changed = await c.query<{ expires: Date }>('SELECT fn_web_set_password($1, $2, $3, $4, $5) AS expires', [
           hash,
           sha256(token),
           config.sessionTtlSeconds,
           req.ip ?? null,
           req.headers['user-agent'] ?? null,
-        ]),
-      );
-      setSessionCookie(res, config, token, r.rows[0]!.expires);
-      req.log.info('password changed, other sessions dropped');
-      res.json({ user: userDto(user) });
+        ]);
+        return { expires: changed.rows[0]!.expires, apiKeysRevoked: keys.rows[0]!.n };
+      });
+      setSessionCookie(res, config, token, r.expires);
+      req.log.info({ apiKeysRevoked: r.apiKeysRevoked }, 'password changed, other sessions and api keys dropped');
+      res.json({ user: userDto(user), apiKeysRevoked: r.apiKeysRevoked });
     }),
   );
 

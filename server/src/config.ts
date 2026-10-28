@@ -25,7 +25,10 @@ export interface Config {
   sessionTtlSeconds: number;
   trustProxy: boolean | number;
   limits: {
+    /** Все попытки на один email, с любых адресов: защита от распределённого подбора, лимит высокий. */
     loginEmail: RateLimit;
+    /** Попытки на пару «email + адрес клиента»: чужой адрес не может запереть владельца аккаунта. */
+    loginEmailIp: RateLimit;
     loginIp: RateLimit;
     registerIp: RateLimit;
     password: RateLimit;
@@ -64,7 +67,8 @@ const envSchema = z.object({
   COOKIE_SECURE: z.string().optional(),
   DB_POOL_MAX: int('DB_POOL_MAX', 2),
   LOG_LEVEL: z.string().default('info'),
-  AUTH_LOGIN_EMAIL_MAX: int('AUTH_LOGIN_EMAIL_MAX', 10),
+  AUTH_LOGIN_EMAIL_MAX: int('AUTH_LOGIN_EMAIL_MAX', 50),
+  AUTH_LOGIN_EMAIL_IP_MAX: int('AUTH_LOGIN_EMAIL_IP_MAX', 10),
   AUTH_LOGIN_IP_MAX: int('AUTH_LOGIN_IP_MAX', 60),
   AUTH_REGISTER_IP_MAX: int('AUTH_REGISTER_IP_MAX', 10),
 });
@@ -109,6 +113,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: onVercel ? 1 : false,
     limits: {
       loginEmail: { max: e.AUTH_LOGIN_EMAIL_MAX, windowSeconds: 15 * 60 },
+      loginEmailIp: { max: e.AUTH_LOGIN_EMAIL_IP_MAX, windowSeconds: 15 * 60 },
       loginIp: { max: e.AUTH_LOGIN_IP_MAX, windowSeconds: 15 * 60 },
       registerIp: { max: e.AUTH_REGISTER_IP_MAX, windowSeconds: 3600 },
       password: { max: 5, windowSeconds: 15 * 60 },

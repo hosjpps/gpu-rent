@@ -119,8 +119,11 @@ export function useLogout() {
 }
 
 export function useChangePassword() {
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { currentPassword: string; newPassword: string }) => api.post('/auth/password', v),
+    mutationFn: (v: { currentPassword: string; newPassword: string }) => api.post<{ apiKeysRevoked: number }>('/auth/password', v),
+    // Смена пароля отзывает API-ключи на сервере: список в кэше устарел.
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.apiKeys }),
   });
 }
 

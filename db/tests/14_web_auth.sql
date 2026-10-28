@@ -182,6 +182,7 @@ DECLARE
     u1 bigint := pg_temp.fx('u1');
 BEGIN
     PERFORM pg_temp.assert_eq(fn_web_password_hash(), '$2b$12$' || repeat('a', 53), 'password: the user reads own hash through the function');
+    INSERT INTO api_keys (user_id, name, key_prefix, key_hash) VALUES (u1, 'pw-key-1', 'gr_pwkey', digest('pw-key-1', 'sha256')), (u1, 'pw-key-2', 'gr_pwkey', digest('pw-key-2', 'sha256'));
     PERFORM fn_web_set_password('$2b$12$' || repeat('n', 53), digest('pw-sess-new', 'sha256'), 604800, NULL, 'ua');
     PERFORM pg_temp.assert_eq(fn_web_password_hash(), '$2b$12$' || repeat('n', 53), 'password: the hash is replaced');
 END
@@ -195,6 +196,8 @@ BEGIN
     PERFORM pg_temp.assert_true(EXISTS (SELECT 1 FROM sessions WHERE token_hash = digest('pw-sess-new', 'sha256')), 'password: the remaining session is the new one');
     PERFORM pg_temp.assert_eq((SELECT count(*)::int FROM sessions WHERE user_id = pg_temp.fx('u2')), 1, 'password: sessions of other users are untouched');
     PERFORM pg_temp.assert_eq((SELECT count(*)::int FROM audit_log WHERE action = 'user.password_changed' AND actor_user_id = u1), 1, 'password: the change is written to audit_log');
+    PERFORM pg_temp.assert_eq((SELECT count(*)::int FROM api_keys WHERE user_id = u1 AND name LIKE 'pw-key-%' AND revoked_at IS NULL), 0, 'password: active API keys are revoked');
+    PERFORM pg_temp.assert_eq((SELECT (details->>'api_keys_revoked')::int FROM audit_log WHERE action = 'user.password_changed' AND actor_user_id = u1), 2, 'password: the number of revoked keys is audited');
 END
 $$;
 SELECT pg_temp.as_user(pg_temp.fx('u1')) \g /dev/null

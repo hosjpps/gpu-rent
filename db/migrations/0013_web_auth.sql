@@ -38,7 +38,7 @@ CREATE INDEX idx_sessions_expires ON sessions (expires_at);
 -- каждый запрос может уйти в новый экземпляр функции, и in-memory лимитер видел бы только свои запросы.
 CREATE TABLE auth_attempts (
     id         bigint GENERATED ALWAYS AS IDENTITY,
-    scope      text        NOT NULL,   -- login_email, login_ip, register_ip, password, resend
+    scope      text        NOT NULL,   -- login_email_ip, login_email, login_ip, register_ip, password, resend
     key        text        NOT NULL,   -- email, IP-адрес или id пользователя
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     CONSTRAINT pk_auth_attempts PRIMARY KEY (id)
@@ -253,6 +253,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, gpu_rent, pg_tem
 DECLARE
     v_user    bigint := fn_app_user_id();
     v_expires timestamptz := now() + make_interval(secs => p_ttl_seconds);
+    v_keys    integer;
 BEGIN
     IF v_user IS NULL THEN
         RAISE EXCEPTION 'user context required' USING ERRCODE = 'insufficient_privilege';
@@ -262,10 +263,13 @@ BEGIN
         RAISE EXCEPTION 'user % not found', v_user USING ERRCODE = 'GR004';
     END IF;
     DELETE FROM sessions WHERE user_id = v_user;
+    -- API-ключ мог быть выпущен из украденной сессии: после смены пароля его нельзя оставлять в силе.
+    UPDATE api_keys SET revoked_at = now() WHERE user_id = v_user AND revoked_at IS NULL;
+    GET DIAGNOSTICS v_keys = ROW_COUNT;
     INSERT INTO sessions (user_id, token_hash, expires_at, ip, user_agent)
     VALUES (v_user, p_token_hash, v_expires, p_ip, left(p_user_agent, 300));
-    INSERT INTO audit_log (actor_user_id, action, entity, entity_id, ip)
-    VALUES (v_user, 'user.password_changed', 'users', v_user::text, _fn_audit_ip());
+    INSERT INTO audit_log (actor_user_id, action, entity, entity_id, details, ip)
+    VALUES (v_user, 'user.password_changed', 'users', v_user::text, jsonb_build_object('api_keys_revoked', v_keys), _fn_audit_ip());
     RETURN v_expires;
 END
 $$;

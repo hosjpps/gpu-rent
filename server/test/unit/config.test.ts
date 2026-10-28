@@ -21,7 +21,8 @@ describe('loadConfig', () => {
     expect(c.cookieName).toBe('sid');
     expect(c.sessionTtlSeconds).toBe(7 * 24 * 3600);
     expect(c.trustProxy).toBe(false);
-    expect(c.limits.loginEmail).toEqual({ max: 10, windowSeconds: 900 });
+    expect(c.limits.loginEmail).toEqual({ max: 50, windowSeconds: 900 });
+    expect(c.limits.loginEmailIp).toEqual({ max: 10, windowSeconds: 900 });
     expect(c.limits.registerIp).toEqual({ max: 10, windowSeconds: 3600 });
   });
 
@@ -73,8 +74,9 @@ describe('loadConfig', () => {
   });
 
   it('лимиты частоты настраиваются через окружение', () => {
-    const c = loadConfig({ ...base, AUTH_LOGIN_EMAIL_MAX: '3', AUTH_LOGIN_IP_MAX: '5', AUTH_REGISTER_IP_MAX: '2' });
+    const c = loadConfig({ ...base, AUTH_LOGIN_EMAIL_MAX: '3', AUTH_LOGIN_EMAIL_IP_MAX: '4', AUTH_LOGIN_IP_MAX: '5', AUTH_REGISTER_IP_MAX: '2' });
     expect(c.limits.loginEmail.max).toBe(3);
+    expect(c.limits.loginEmailIp.max).toBe(4);
     expect(c.limits.loginIp.max).toBe(5);
     expect(c.limits.registerIp.max).toBe(2);
   });

@@ -365,8 +365,12 @@ function PasswordCard() {
     change.mutate(
       { currentPassword: current, newPassword: next },
       {
-        onSuccess: () => {
-          toast('Пароль изменён, остальные сессии завершены');
+        onSuccess: ({ apiKeysRevoked }) => {
+          toast(
+            apiKeysRevoked > 0
+              ? `Пароль изменён, остальные сессии завершены, API-ключи (${apiKeysRevoked}) отозваны: выпустите новые`
+              : 'Пароль изменён, остальные сессии завершены',
+          );
           setCurrent('');
           setNext('');
         },

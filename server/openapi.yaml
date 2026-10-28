@@ -229,7 +229,8 @@ paths:
       summary: Смена пароля
       description: |
         Только по cookie. После смены все прежние сессии пользователя удаляются, текущему браузеру выдаётся
-        новая (в ответе `Set-Cookie`): старый токен мог быть украден. Число попыток ограничено.
+        новая (в ответе `Set-Cookie`): старый токен мог быть украден. По той же причине отзываются все действующие
+        API-ключи (их число — `apiKeysRevoked`), новые нужно выпустить заново. Число попыток ограничено.
       security:
         - cookieAuth: []
       parameters:
@@ -252,9 +253,13 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [user]
+                required: [user, apiKeysRevoked]
                 properties:
                   user: { $ref: '#/components/schemas/User' }
+                  apiKeysRevoked:
+                    type: integer
+                    minimum: 0
+                    description: Сколько действующих API-ключей отозвано сменой пароля.
         '400': { $ref: '#/components/responses/BadRequest' }
         '401':
           description: Нет входа (`UNAUTHORIZED`) либо неверен текущий пароль (`INVALID_CREDENTIALS`).
