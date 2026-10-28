@@ -196,6 +196,8 @@ RESET ROLE;
 
 -- Роль без выданных прав (REVOKE ALL FROM PUBLIC).
 CREATE ROLE tst_nobody NOLOGIN;
+-- Не суперпользователю (Neon) создатель роли не получает право SET ROLE на неё сам: выдаём явно.
+GRANT tst_nobody TO CURRENT_USER WITH SET TRUE;
 SET LOCAL ROLE tst_nobody;
 DO $$
 BEGIN
