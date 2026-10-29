@@ -17,12 +17,18 @@ test.describe('Публичная часть', () => {
     // в таблице есть цены в рублях и кнопки запуска
     await expect(page.getByTestId('gpu-table').first().getByRole('button', { name: /Запустить/ }).first()).toBeVisible();
     await shot(page, '01-catalog', { viewport: { width: 1280, height: 960 } });
+    // тёмная тема по системной настройке (выбор пользователя не сохранён)
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await shot(page, '11-catalog-dark', { viewport: { width: 1280, height: 960 } });
+    await page.emulateMedia({ colorScheme: null });
   });
 
   test('вкладка «Шаблоны» показывает публичные шаблоны', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('tab', { name: 'Шаблоны' }).click();
     await expect(page.getByText('PyTorch').first()).toBeVisible();
+    await shot(page, '12-templates', { viewport: { width: 1280, height: 900 } });
+    await shot(page, '13-templates-mobile', { viewport: { width: 390, height: 844 } });
   });
 
   test('защищённые страницы ведут на вход', async ({ page }) => {
@@ -43,6 +49,9 @@ test.describe('Публичная часть', () => {
     await page.goto('/');
     await expect(page.getByTestId('gpu-table').first()).toBeVisible();
     await shot(page, '09-catalog-mobile', { viewport: { width: 390, height: 844 } });
+    await page.goto('/login');
+    await expect(page.getByRole('main')).toBeVisible();
+    await shot(page, '14-login-mobile', { viewport: { width: 390, height: 844 } });
   });
 
   test('документация API: Swagger UI показывает операции', async ({ page }) => {
@@ -78,11 +87,15 @@ test.describe('Вход демо-пользователя', () => {
     await expect(page.getByRole('heading', { name: 'Мои инстансы' })).toBeVisible();
     await shot(page, '03-instances');
     await shot(page, '03-instances-mobile', { viewport: { width: 390, height: 844 } });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await shot(page, '16-instances-dark');
+    await page.emulateMedia({ colorScheme: null });
 
     await page.getByRole('link', { name: 'Баланс', exact: true }).click();
     await expect(page.getByTestId('balance')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'История операций' })).toBeVisible();
     await shot(page, '05-billing');
+    await shot(page, '15-billing-mobile', { viewport: { width: 390, height: 844 } });
 
     await page.getByRole('link', { name: 'Тома' }).click();
     await expect(page.getByRole('heading', { name: 'Сетевые тома' })).toBeVisible();

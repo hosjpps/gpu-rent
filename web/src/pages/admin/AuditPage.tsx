@@ -10,7 +10,7 @@ export default function AuditPage() {
       <QueryState isLoading={audit.isLoading} error={audit.error} onRetry={() => void audit.refetch()} />
       {audit.data && rows.length === 0 && <Empty title="Записей пока нет" />}
       {rows.length > 0 && (
-        <div className="card flush">
+        <div className="card flush tall">
           <table className="table responsive" data-testid="audit-table">
             <thead>
               <tr>
@@ -28,7 +28,9 @@ export default function AuditPage() {
                   <td data-label="Время" className="nowrap">
                     {formatDateTime(r.createdAt)}
                   </td>
-                  <td data-label="Кто">{r.actor?.email ?? 'система'}</td>
+                  <td data-label="Кто" className="break">
+                    {r.actor?.email ?? 'система'}
+                  </td>
                   <td data-label="Действие" className="mono small">
                     {r.action}
                   </td>

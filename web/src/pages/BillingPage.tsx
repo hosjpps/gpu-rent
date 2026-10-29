@@ -4,6 +4,7 @@ import { useBalance, useCreatePayment, useDemoPay, useMe, useSpend, useTransacti
 import type { PaymentCreated } from '../api/types';
 import { BarChart } from '../components/BarChart';
 import { ErrorNote } from '../components/ErrorNote';
+import { IconWallet } from '../components/icons';
 import { useToast } from '../components/Toast';
 import { Empty, Field, PageHead, QueryState } from '../components/ui';
 import {
@@ -40,12 +41,19 @@ function BalanceCard() {
   const value = balance.data?.balance ?? me?.balance;
   const negative = value !== undefined && toNumber(value) < 0;
   return (
-    <section className="card">
-      <h2>Баланс</h2>
+    <section className={negative ? 'card balance-card is-negative' : 'card balance-card'}>
+      <div className="balance-card-head">
+        <h2>Баланс</h2>
+        <span className="stat-icon" aria-hidden="true">
+          <IconWallet />
+        </span>
+      </div>
       {balance.isLoading && !value ? (
-        <p className="muted">Загрузка…</p>
+        <p className="hero skeleton-text" aria-busy="true">
+          <span className="sr-only">Загрузка…</span>
+        </p>
       ) : (
-        <p className={negative ? 'hero hero-neg' : 'hero'} data-testid="balance">
+        <p className={negative ? 'hero hero-neg mono' : 'hero mono'} data-testid="balance">
           {formatMoneyPrecise(value)}
         </p>
       )}
@@ -126,9 +134,15 @@ function TopUpCard() {
               aria-invalid={!!error}
             />
           </Field>
-          <div className="row wrap">
+          <div className="chips" role="group" aria-label="Быстрые суммы">
             {QUICK_AMOUNTS.map((a) => (
-              <button type="button" key={a} className="btn btn-sm" onClick={() => setAmount(String(a))}>
+              <button
+                type="button"
+                key={a}
+                className="chip"
+                aria-pressed={amount === String(a)}
+                onClick={() => setAmount(String(a))}
+              >
                 {formatMoney(a).replace(',00', '')}
               </button>
             ))}
@@ -191,8 +205,9 @@ function SpendSection() {
       <QueryState isLoading={spend.isLoading} error={spend.error} onRetry={() => void spend.refetch()} />
       {spend.data && (
         <div className={spend.isFetching ? 'dim' : undefined}>
-          <p>
-            Всего за период: <strong>{formatMoneyPrecise(spend.data.total)}</strong>
+          <p className="spend-total">
+            <span className="muted">Всего за период</span>
+            <strong className="mono">{formatMoneyPrecise(spend.data.total)}</strong>
           </p>
           <BarChart
             data={bars}
@@ -217,7 +232,7 @@ function SpendSection() {
                         <td>
                           <Link to={`/instances/${r.instanceId}`}>{r.name}</Link>
                         </td>
-                        <td className="num">{formatMoneyPrecise(r.amount)}</td>
+                        <td className="num mono">{formatMoneyPrecise(r.amount)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -238,7 +253,11 @@ function TransactionsSection() {
     <section className="card section">
       <h2>История операций</h2>
       <QueryState isLoading={tx.isLoading} error={tx.error} onRetry={() => void tx.refetch()} />
-      {tx.data && rows.length === 0 && <Empty title="Операций пока нет">Пополните баланс, чтобы запустить инстанс.</Empty>}
+      {tx.data && rows.length === 0 && (
+        <Empty title="Операций пока нет" icon={<IconWallet size={28} />}>
+          Пополните баланс, чтобы запустить инстанс.
+        </Empty>
+      )}
       {rows.length > 0 && (
         <div className="table-scroll">
           <table className="table responsive" data-testid="tx-table">
@@ -255,12 +274,16 @@ function TransactionsSection() {
                 const amount = toNumber(t.amount);
                 return (
                   <tr key={t.id} data-type={t.type}>
-                    <td data-label="Дата">{formatDateTime(t.createdAt)}</td>
-                    <td data-label="Операция">{TX_LABEL[t.type] ?? t.type}</td>
+                    <td data-label="Дата" className="nowrap muted">
+                      {formatDateTime(t.createdAt)}
+                    </td>
+                    <td data-label="Операция">
+                      <span className={`tx-type tx-${t.type}`}>{TX_LABEL[t.type] ?? t.type}</span>
+                    </td>
                     <td data-label="Описание" className="break">
                       {t.description || '—'}
                     </td>
-                    <td data-label="Сумма" className={amount < 0 ? 'num neg' : 'num pos'}>
+                    <td data-label="Сумма" className={amount < 0 ? 'num mono neg' : 'num mono pos'}>
                       {amount > 0 ? '+' : ''}
                       {formatMoneyPrecise(amount)}
                     </td>

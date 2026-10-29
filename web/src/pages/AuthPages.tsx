@@ -1,12 +1,45 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useLogin, useRegister } from '../api/hooks';
 import { ErrorNote } from '../components/ErrorNote';
+import { BrandMark, IconClock, IconLayers, IconTerminal } from '../components/icons';
 import { Field } from '../components/ui';
 import { validateEmail, validateName, validatePassword } from '../lib/validation';
 
 interface LocationState {
   from?: string;
+}
+
+const PERKS = [
+  { icon: <IconClock />, title: 'Посекундная оплата', text: 'Списываем ровно за время работы, остановили инстанс — счёт за GPU остановился.' },
+  { icon: <IconLayers />, title: 'Шаблоны PyTorch и Jupyter', text: 'Готовые образы с драйверами и CUDA: выбрали шаблон, и контейнер готов к работе.' },
+  { icon: <IconTerminal />, title: 'Тома и SSH', text: 'Сетевые тома хранят данные между запусками, доступ по своему SSH-ключу.' },
+];
+
+/** Экран входа и регистрации: слева о сервисе, справа форма (на телефоне форма первой) */
+function AuthShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="auth-split">
+      <div className="auth-card">{children}</div>
+      <aside className="auth-brand" aria-label="О сервисе">
+        <BrandMark size={40} />
+        <p className="auth-brand-title">Видеокарты для обучения и инференса по цене минут, а не месяцев</p>
+        <ul className="perks">
+          {PERKS.map((p) => (
+            <li key={p.title} className="perk">
+              <span className="perk-icon" aria-hidden="true">
+                {p.icon}
+              </span>
+              <span>
+                <strong>{p.title}</strong>
+                <span className="perk-text">{p.text}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </aside>
+    </div>
+  );
 }
 
 export function LoginPage() {
@@ -29,8 +62,9 @@ export function LoginPage() {
   }
 
   return (
-    <div className="auth-card card">
+    <AuthShell>
       <h1>Вход</h1>
+      <p className="muted auth-lead">Войдите, чтобы управлять инстансами, томами и балансом.</p>
       <form className="stack" onSubmit={submit} noValidate>
         <Field label="Email" error={errors.email}>
           <input
@@ -53,14 +87,14 @@ export function LoginPage() {
           />
         </Field>
         <ErrorNote error={login.error} />
-        <button type="submit" className="btn btn-primary" disabled={login.isPending}>
+        <button type="submit" className="btn btn-primary btn-lg" disabled={login.isPending}>
           {login.isPending ? 'Входим…' : 'Войти'}
         </button>
       </form>
-      <p className="muted">
+      <p className="muted auth-switch">
         Нет аккаунта? <Link to="/register">Зарегистрироваться</Link>
       </p>
-    </div>
+    </AuthShell>
   );
 }
 
@@ -91,8 +125,9 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="auth-card card">
+    <AuthShell>
       <h1>Регистрация</h1>
+      <p className="muted auth-lead">Нужны только имя, email и пароль, карта при регистрации не требуется.</p>
       <form className="stack" onSubmit={submit} noValidate>
         <Field label="Имя" error={errors.fullName}>
           <input
@@ -134,13 +169,13 @@ export function RegisterPage() {
           />
         </Field>
         <ErrorNote error={register.error} />
-        <button type="submit" className="btn btn-primary" disabled={register.isPending}>
+        <button type="submit" className="btn btn-primary btn-lg" disabled={register.isPending}>
           {register.isPending ? 'Создаём аккаунт…' : 'Зарегистрироваться'}
         </button>
       </form>
-      <p className="muted">
+      <p className="muted auth-switch">
         Уже есть аккаунт? <Link to="/login">Войти</Link>
       </p>
-    </div>
+    </AuthShell>
   );
 }

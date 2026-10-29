@@ -5,6 +5,7 @@ import type { Volume } from '../api/types';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Dialog } from '../components/Dialog';
 import { ErrorNote } from '../components/ErrorNote';
+import { IconDisk, IconPlus } from '../components/icons';
 import { useToast } from '../components/Toast';
 import { Empty, Field, PageHead, QueryState } from '../components/ui';
 import { formatDateTime } from '../lib/format';
@@ -32,16 +33,23 @@ export function VolumesPage() {
     <>
       <PageHead title="Сетевые тома">
         <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
+          <IconPlus size={18} />
           Создать том
         </button>
       </PageHead>
-      <p className="muted">
+      <p className="muted page-lead">
         Том живёт отдельно от инстансов и хранит данные между запусками. Он привязан к одному дата-центру и
         подключается не более чем к одному инстансу. Размер можно только увеличивать.
       </p>
 
       <QueryState isLoading={volumes.isLoading} error={volumes.error} onRetry={() => void volumes.refetch()} />
-      {volumes.data && list.length === 0 && <Empty title="Томов пока нет">Создайте первый том кнопкой выше.</Empty>}
+      {volumes.data && list.length === 0 && (
+        <div className="card">
+          <Empty title="Томов пока нет" icon={<IconDisk size={28} />}>
+            Создайте первый том кнопкой выше: данные на нём переживут остановку и удаление инстанса.
+          </Empty>
+        </div>
+      )}
 
       {list.length > 0 && (
         <div className="card flush">
@@ -62,8 +70,10 @@ export function VolumesPage() {
                   <td data-label="Название">
                     <strong>{v.name}</strong>
                   </td>
-                  <td data-label="Дата-центр">{v.datacenter.code}</td>
-                  <td data-label="Размер" className="num">
+                  <td data-label="Дата-центр">
+                    <span className="code-chip mono">{v.datacenter.code}</span>
+                  </td>
+                  <td data-label="Размер" className="num mono">
                     {v.sizeGb} ГБ
                   </td>
                   <td data-label="Подключён к">

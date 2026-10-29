@@ -1,8 +1,9 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useInstance } from '../api/hooks';
 import { ApiError } from '../api/client';
+import { IconArrowLeft } from '../components/icons';
 import { InstanceActions } from '../components/InstanceActions';
-import { Runtime } from '../components/Runtime';
+import { Runtime, SessionCost } from '../components/Runtime';
 import { PageHead, PricingBadge, QueryState, StatusBadge } from '../components/ui';
 import { HOURS_IN_DAY } from '../lib/cost';
 import { formatDateTime, formatMoney, toNumber } from '../lib/format';
@@ -27,7 +28,10 @@ export function InstanceDetailPage() {
   return (
     <>
       <p className="crumbs">
-        <Link to="/instances">← Инстансы</Link>
+        <Link to="/instances" className="crumb-link">
+          <IconArrowLeft size={16} />
+          Инстансы
+        </Link>
       </p>
       <QueryState isLoading={instance.isLoading} error={instance.error} onRetry={() => void instance.refetch()} />
       {i && (
@@ -45,7 +49,7 @@ export function InstanceDetailPage() {
                 <dd className="mono small break">{i.id}</dd>
                 <dt>Дата-центр</dt>
                 <dd>
-                  {i.datacenter.name} ({i.datacenter.code})
+                  {i.datacenter.name} <span className="code-chip mono">{i.datacenter.code}</span>
                 </dd>
                 <dt>GPU</dt>
                 <dd>
@@ -58,7 +62,7 @@ export function InstanceDetailPage() {
                 <dt>Шаблон</dt>
                 <dd>{i.template?.name ?? '—'}</dd>
                 <dt>Диск контейнера</dt>
-                <dd>{i.containerDiskGb} ГБ</dd>
+                <dd className="mono">{i.containerDiskGb} ГБ</dd>
                 <dt>Сетевой том</dt>
                 <dd>{i.volume ? `${i.volume.name} (${i.volume.sizeGb} ГБ)` : '—'}</dd>
                 <dt>SSH-ключ</dt>
@@ -71,14 +75,18 @@ export function InstanceDetailPage() {
               <dl className="kv">
                 <dt>Цена за час</dt>
                 <dd>
-                  <strong>{formatMoney(i.pricePerHour)}</strong>
-                  <span className="muted small"> зафиксирована при запуске</span>
+                  <strong className="mono">{formatMoney(i.pricePerHour)}</strong>
+                  <div className="muted small">зафиксирована при запуске</div>
                 </dd>
                 <dt>Цена за сутки</dt>
-                <dd>{formatMoney(toNumber(i.pricePerHour) * HOURS_IN_DAY)}</dd>
+                <dd className="mono">{formatMoney(toNumber(i.pricePerHour) * HOURS_IN_DAY)}</dd>
                 <dt>Время работы сеанса</dt>
-                <dd>
+                <dd className="mono">
                   <Runtime instance={i} />
+                </dd>
+                <dt>Стоимость сеанса</dt>
+                <dd className="mono">
+                  <SessionCost instance={i} />
                 </dd>
                 <dt>Создан</dt>
                 <dd>{formatDateTime(i.createdAt)}</dd>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useInstanceAction } from '../api/hooks';
 import type { Instance } from '../api/types';
 import { ConfirmDialog } from './ConfirmDialog';
+import { IconPlay, IconTrash, IconStop } from './icons';
 import { useToast } from './Toast';
 
 type Action = 'stop' | 'resume' | 'terminate';
@@ -54,19 +55,22 @@ export function InstanceActions({ instance, onDone }: { instance: Instance; onDo
 
   return (
     <>
-      <div className="row">
+      <div className="row actions-row">
         {s === 'running' && (
           <button type="button" className="btn btn-sm" disabled={busy} onClick={() => open('stop')}>
+            <IconStop size={16} />
             Стоп
           </button>
         )}
         {s === 'stopped' && (
           <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => open('resume')}>
+            <IconPlay size={16} />
             Старт
           </button>
         )}
         {s !== 'terminated' && (
           <button type="button" className="btn btn-sm btn-danger-outline" disabled={busy} onClick={() => open('terminate')}>
+            <IconTrash size={16} />
             Удалить
           </button>
         )}

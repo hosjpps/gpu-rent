@@ -101,7 +101,7 @@ export default function PricesPage() {
         </div>
         <QueryState isLoading={prices.isLoading} error={prices.error} onRetry={() => void prices.refetch()} />
         {prices.data && (
-          <div className="table-scroll">
+          <div className="table-scroll tall">
             <table className="table responsive" data-testid="prices-table">
               <thead>
                 <tr>
@@ -116,12 +116,14 @@ export default function PricesPage() {
               <tbody>
                 {rows.map((p) => (
                   <tr key={p.id}>
-                    <td data-label="ДЦ">{p.datacenter.code}</td>
+                    <td data-label="ДЦ">
+                      <span className="code-chip mono">{p.datacenter.code}</span>
+                    </td>
                     <td data-label="Модель">{p.gpuModel}</td>
                     <td data-label="Тариф">
                       <PricingBadge type={p.pricingType} />
                     </td>
-                    <td data-label="Цена" className="num">
+                    <td data-label="Цена" className="num mono">
                       {formatMoneyPrecise(p.pricePerHour)}
                     </td>
                     <td data-label="С">{formatDateTime(p.validFrom)}</td>

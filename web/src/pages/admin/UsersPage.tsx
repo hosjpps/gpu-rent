@@ -33,7 +33,7 @@ export default function UsersPage() {
       <QueryState isLoading={users.isLoading} error={users.error} onRetry={() => void users.refetch()} />
       {users.data && rows.length === 0 && <Empty title="Никого не найдено">Измените запрос поиска.</Empty>}
       {users.data && rows.length > 0 && (
-        <div className="card flush">
+        <div className="card flush tall">
           <table className="table responsive" data-testid="users-table">
             <thead>
               <tr>
@@ -58,10 +58,12 @@ export default function UsersPage() {
                       {u.status === 'blocked' ? 'Заблокирован' : 'Активен'}
                     </span>
                   </td>
-                  <td data-label="Баланс" className="num">
+                  <td data-label="Баланс" className="num mono">
                     {formatMoney(u.balance)}
                   </td>
-                  <td data-label="Регистрация">{formatDateTime(u.createdAt)}</td>
+                  <td data-label="Регистрация" className="nowrap">
+                    {formatDateTime(u.createdAt)}
+                  </td>
                   <td className="actions">
                     <button
                       type="button"

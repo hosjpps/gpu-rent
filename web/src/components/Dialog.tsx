@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { IconClose } from './icons';
 
 interface DialogProps {
   title: string;
@@ -33,7 +34,7 @@ export function Dialog({ title, onClose, children, wide }: DialogProps) {
         <div className="dialog-head">
           <h2 id="dialog-title">{title}</h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Закрыть">
-            ×
+            <IconClose />
           </button>
         </div>
         {children}

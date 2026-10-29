@@ -12,7 +12,7 @@ export default function InfrastructurePage() {
       {infra.data?.map((dc) => (
         <section key={dc.code} className="card section">
           <h2>
-            {dc.name} <span className="muted">· {dc.code}</span>
+            {dc.name} <span className="code-chip mono">{dc.code}</span>
           </h2>
           {dc.nodes.map((node) => (
             <NodeBlock key={node.id} node={node} />

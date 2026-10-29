@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { IconCheck } from './icons';
 
 interface ToastItem {
   id: number;
@@ -37,5 +38,12 @@ function ToastView({ item, onDone }: { item: ToastItem; onDone: () => void }) {
     const t = setTimeout(onDone, 4000);
     return () => clearTimeout(t);
   }, [onDone]);
-  return <div className="toast">{item.text}</div>;
+  return (
+    <div className="toast">
+      <span className="toast-icon" aria-hidden="true">
+        <IconCheck size={16} />
+      </span>
+      {item.text}
+    </div>
+  );
 }

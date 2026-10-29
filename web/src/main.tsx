@@ -5,7 +5,10 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@ta
 import { ApiError } from './api/client';
 import { keys } from './api/hooks';
 import { App } from './App';
+import { applyStoredTheme } from './components/ThemeToggle';
 import './styles.css';
+
+applyStoredTheme();
 
 // 401 на любом запросе, кроме проверки «кто я», может значить истёкшую сессию. Не гадаем, а перепроверяем:
 // если /auth/me тоже ответит 401, пользователь станет «гостем» и RequireAuth отправит его на вход.

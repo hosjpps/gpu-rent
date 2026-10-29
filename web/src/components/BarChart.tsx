@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 export interface Bar {
   /** Подпись на оси X (короткая) */
@@ -45,6 +45,8 @@ export function BarChart({
   const [width, setWidth] = useState(600);
   const [active, setActive] = useState<number | null>(null);
   const [table, setTable] = useState(false);
+  // id градиента уникален на странице: графиков может быть несколько
+  const gradId = `bar-g-${useId().replace(/:/g, '')}`;
 
   // Рисуем в реальных пикселях, чтобы подписи не сжимались на телефоне
   useEffect(() => {
@@ -72,7 +74,7 @@ export function BarChart({
   return (
     <div className="chart">
       <div className="row end">
-        <button type="button" className="btn btn-sm" onClick={() => setTable((v) => !v)}>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={() => setTable((v) => !v)}>
           {table ? 'Показать график' : 'Показать таблицей'}
         </button>
       </div>
@@ -98,6 +100,12 @@ export function BarChart({
       ) : (
         <div className="chart-box" ref={box} onPointerLeave={() => setActive(null)}>
           <svg width={width} height={HEIGHT} role="img" aria-label={ariaLabel}>
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" className="chart-stop-top" />
+                <stop offset="1" className="chart-stop-bottom" />
+              </linearGradient>
+            </defs>
             {ticks.map((t) => (
               <g key={t}>
                 <line className="chart-grid" x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} />
@@ -117,6 +125,7 @@ export function BarChart({
                     // скругление 4 px только у вершины, основание прямое
                     <path
                       className={active === i ? 'chart-bar hot' : 'chart-bar'}
+                      fill={`url(#${gradId})`}
                       d={`M${x},${base} V${base - h + r} Q${x},${base - h} ${x + r},${base - h} H${x + barW - r} Q${x + barW},${base - h} ${x + barW},${base - h + r} V${base} Z`}
                     />
                   )}

@@ -6,6 +6,7 @@ import { HOURS_IN_DAY, HOURS_IN_MONTH, hourlyCost, pricePerGpu } from '../lib/co
 import { formatMoney, toNumber } from '../lib/format';
 import { validateEnvName, validateName } from '../lib/validation';
 import { Dialog } from './Dialog';
+import { IconClose, IconPlay, IconPlus } from './icons';
 import { ErrorNote } from './ErrorNote';
 import { useToast } from './Toast';
 import { Field } from './ui';
@@ -182,7 +183,7 @@ export function LaunchDialog({
               {(['on_demand', 'spot'] as const).map((type) => {
                 const price = offer ? pricePerGpu(offer, type) : null;
                 return (
-                  <label key={type} className={pricing === type ? 'radio-card selected' : 'radio-card'}>
+                  <label key={type} className={`radio-card radio-${type}${pricing === type ? ' selected' : ''}`}>
                     <input
                       type="radio"
                       name="pricingType"
@@ -282,14 +283,15 @@ export function LaunchDialog({
                 aria-label={`Удалить переменную ${i + 1}`}
                 onClick={() => setEnv(env.filter((_, j) => j !== i))}
               >
-                ×
+                <IconClose size={18} />
               </button>
               {errors[`env${i}`] && <span className="field-error env-error">{errors[`env${i}`]}</span>}
             </div>
           ))}
           <div>
             <button type="button" className="btn btn-sm" onClick={() => setEnv([...env, { name: '', value: '' }])}>
-              + Добавить переменную
+              <IconPlus size={16} />
+              Добавить переменную
             </button>
           </div>
           <span className="field-hint">Значения хранятся на сервере в зашифрованном виде.</span>
@@ -298,7 +300,7 @@ export function LaunchDialog({
         <div className="cost-box" aria-live="polite">
           <div className="cost-main">
             <span>Стоимость часа</span>
-            <strong data-testid="hourly-cost">{hour === null ? '—' : formatMoney(hour)}</strong>
+            <strong className="mono" data-testid="hourly-cost">{hour === null ? '—' : formatMoney(hour)}</strong>
           </div>
           {hour !== null && (
             <div className="muted small">
@@ -327,6 +329,7 @@ export function LaunchDialog({
             Отмена
           </button>
           <button type="submit" className="btn btn-primary" disabled={launch.isPending}>
+            {!launch.isPending && <IconPlay size={16} />}
             {launch.isPending ? 'Запускаем…' : 'Запустить'}
           </button>
         </div>
