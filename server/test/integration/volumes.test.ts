@@ -199,6 +199,20 @@ describe('ограничения на аккаунт', () => {
     expect((await u.api.post('/api/volumes', { name: 'fit', datacenterCode: offer.dc, sizeGb: 1000 })).status).toBe(201);
   });
 
+  it('расширение тома не обходит суммарный лимит 5000 ГБ; чужой и несуществующий том по-прежнему 404', async () => {
+    const u = await newUser(app);
+    const a = await newVolume(u, { sizeGb: 4000 });
+    const b = await newVolume(u, { sizeGb: 10 });
+    const over = await u.api.post(`/api/volumes/${b.id}/extend`, { sizeGb: 1001 });
+    expect(over.status).toBe(409);
+    expect(over.body.error.code).toBe('LIMIT_REACHED');
+    expect((await u.api.post(`/api/volumes/${b.id}/extend`, { sizeGb: 1000 })).status).toBe(200);
+    expect((await u.api.post(`/api/volumes/${a.id}/extend`, { sizeGb: 4001 })).status).toBe(409);
+    expect((await u.api.post('/api/volumes/999999999/extend', { sizeGb: 20 })).status).toBe(404);
+    const stranger = await newUser(app);
+    expect((await stranger.api.post(`/api/volumes/${a.id}/extend`, { sizeGb: 20 })).status).toBe(404);
+  });
+
   it('параллельные запросы вместе не перешагивают лимит', async () => {
     const u = await newUser(app);
     for (let i = 0; i < 8; i++) await newVolume(u, { sizeGb: 10 });

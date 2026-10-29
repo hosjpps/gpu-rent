@@ -118,8 +118,18 @@ export function volumeRoutes(config: Config): Router {
         const row = await withUser(userCtx(req), async (c) => {
           // Сначала начисляем хранение по старому размеру: иначе новый размер задним числом лёг бы на весь непроведённый интервал.
           await c.query('SELECT * FROM fn_bill_current_user()');
-          const upd = await c.query("UPDATE volumes SET size_gb = $3 WHERE id = $1 AND user_id = $2 AND status = 'active'", [id, userId, b.sizeGb]);
-          if (upd.rowCount === 0) throw notFound('Том не найден');
+          // Тот же лимит, что при создании: иначе том можно создать маленьким, а потом «растянуть» мимо потолка.
+          await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`volumes:${userId}`]);
+          const own = await c.query<{ id: number }>("SELECT id FROM volumes WHERE id = $1 AND user_id = $2 AND status = 'active'", [id, userId]);
+          if (!own.rows[0]) throw notFound('Том не найден');
+          const others = await c.query<{ gb: number }>(
+            "SELECT coalesce(sum(size_gb), 0)::int AS gb FROM volumes WHERE user_id = $1 AND status = 'active' AND id <> $2",
+            [userId, id],
+          );
+          if (others.rows[0]!.gb + b.sizeGb > MAX_VOLUMES_TOTAL_GB) {
+            throw conflict(`Суммарный размер томов не может превышать ${MAX_VOLUMES_TOTAL_GB} ГБ`, 'LIMIT_REACHED');
+          }
+          await c.query("UPDATE volumes SET size_gb = $3 WHERE id = $1 AND user_id = $2 AND status = 'active'", [id, userId, b.sizeGb]);
           return loadVolume(c, id, userId);
         });
         res.json(toVolume(row!));
