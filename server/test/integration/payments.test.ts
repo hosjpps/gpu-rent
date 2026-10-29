@@ -279,3 +279,32 @@ describe('вебхук платёжного шлюза', () => {
     expect(res.status).toBe(413);
   });
 });
+
+describe('ограничение числа неоплаченных платежей', () => {
+  it('не более 10 pending за сутки: одиннадцатый — 409 LIMIT_REACHED; оплаченный место освобождает', async () => {
+    const u = await newUser(app);
+    const first = await createPayment(u, '10');
+    for (let i = 1; i < 10; i++) await createPayment(u, '10');
+    const over = await u.api.post('/api/payments', { amount: '10' });
+    expect(over.status).toBe(409);
+    expect(over.body.error.code).toBe('LIMIT_REACHED');
+
+    expect((await u.api.post(`/api/payments/${first.id}/demo-pay`)).status).toBe(200);
+    expect((await u.api.post('/api/payments', { amount: '10' })).status).toBe(201);
+  });
+
+  it('платежи старше суток не блокируют новые', async () => {
+    const u = await newUser(app);
+    for (let i = 0; i < 10; i++) await createPayment(u, '10');
+    await sql("UPDATE payments SET created_at = now() - interval '2 days' WHERE user_id = $1", [u.id]);
+    expect((await u.api.post('/api/payments', { amount: '10' })).status).toBe(201);
+  });
+
+  it('счётчик у каждого пользователя свой', async () => {
+    const a = await newUser(app);
+    const b = await newUser(app);
+    for (let i = 0; i < 10; i++) await createPayment(a, '10');
+    expect((await a.api.post('/api/payments', { amount: '10' })).status).toBe(409);
+    expect((await b.api.post('/api/payments', { amount: '10' })).status).toBe(201);
+  });
+});

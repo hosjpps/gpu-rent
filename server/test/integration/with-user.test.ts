@@ -152,8 +152,9 @@ describe('withUser: параллельные запросы разных пол�
     expect(mine.id).toBeTruthy();
   });
 
-  it('через API: 20 параллельных платежей от каждого из двух пользователей создаются каждому на своё имя', async () => {
-    const jobs = Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? a : b).api.post('/api/payments', { amount: 10 + (i % 2) }));
+  it('через API: 10 параллельных платежей от каждого из двух пользователей создаются каждому на своё имя', async () => {
+    // 10 на пользователя — ровно до лимита неоплаченных платежей за сутки
+    const jobs = Array.from({ length: 20 }, (_, i) => (i % 2 === 0 ? a : b).api.post('/api/payments', { amount: 10 + (i % 2) }));
     const done = await Promise.all(jobs);
     expect(done.every((r) => r.status === 201)).toBe(true);
     const rows = await sql<{ user_id: number; amount: string; n: number }>(
@@ -161,8 +162,8 @@ describe('withUser: параллельные запросы разных пол�
       [a.id, b.id],
     );
     const byUser = Object.fromEntries(rows.map((r) => [`${r.user_id}:${Number(r.amount)}`, r.n]));
-    expect(byUser[`${a.id}:10`]).toBe(20); // чётные номера — A, сумма 10
-    expect(byUser[`${b.id}:11`]).toBe(20); // нечётные — B, сумма 11
+    expect(byUser[`${a.id}:10`]).toBe(10); // чётные номера — A, сумма 10
+    expect(byUser[`${b.id}:11`]).toBe(10); // нечётные — B, сумма 11
     expect(byUser[`${a.id}:11`]).toBeUndefined();
     expect(byUser[`${b.id}:10`]).toBeUndefined();
   });

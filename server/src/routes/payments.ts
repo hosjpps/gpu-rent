@@ -7,10 +7,12 @@ import { z } from 'zod';
 import { authenticate, requireUser } from '../auth/middleware';
 import type { Config } from '../config';
 import { withUser } from '../db';
-import { badRequest, notFound, unauthorized } from '../errors';
+import { badRequest, conflict, notFound, unauthorized } from '../errors';
 import { NO_STORE, iso, systemCtx, userCtx, wrap } from '../http';
 import { createPaymentBody, decimalSchema, idParams, parse } from '../schemas';
 import { signPayload, verifySignature } from '../webhook';
+
+const MAX_PENDING_PAYMENTS = 10;
 
 // Реальный шлюз (ЮKassa) подключался бы так же: свой provider и формат подписи, остальной путь тот же.
 const PROVIDER = 'demo';
@@ -111,6 +113,15 @@ export function paymentRoutes(config: Config): Router {
       const body = parse(createPaymentBody, req.body);
       const user = req.user!;
       const payment = await withUser(userCtx(req), async (c) => {
+        // Неоплаченные платежи никто не отменяет, поэтому за сутки их можно создать ограниченное число.
+        await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`payments:${user.id}`]);
+        const open = await c.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM payments WHERE user_id = $1 AND status = 'pending' AND created_at > now() - interval '1 day'`,
+          [user.id],
+        );
+        if ((open.rows[0]?.n ?? 0) >= MAX_PENDING_PAYMENTS) {
+          throw conflict(`Не более ${MAX_PENDING_PAYMENTS} неоплаченных платежей за сутки: завершите созданные`, 'LIMIT_REACHED');
+        }
         // user_id берём из сессии, не из тела; RLS (p_payments) дополнительно не даст вставить чужого
         const r = await c.query<PaymentRow>(
           `INSERT INTO payments (user_id, provider, provider_payment_id, amount) VALUES ($1, $2, $3, $4) RETURNING ${PAYMENT_COLUMNS}`,

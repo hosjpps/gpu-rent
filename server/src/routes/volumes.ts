@@ -8,6 +8,10 @@ import { NO_STORE, iso, userCtx, wrap } from '../http';
 import { authenticate, requireUser } from '../auth/middleware';
 import { createVolumeBody, extendVolumeBody, idParams, parse } from '../schemas';
 
+// Тома тарифицируются и занимают место в БД; лимит не даёт одному аккаунту заполнить бесплатное хранилище.
+const MAX_VOLUMES = 10;
+const MAX_VOLUMES_TOTAL_GB = 5000;
+
 interface VolumeRow {
   id: number;
   name: string;
@@ -66,7 +70,7 @@ export function volumeRoutes(config: Config): Router {
     wrap(async (req, res) => {
       const userId = req.user!.id;
       const rows = await withUser(userCtx(req), async (c) => {
-        const r = await c.query<VolumeRow>(`${VOLUME_SQL} WHERE v.user_id = $1 AND v.status = 'active' ORDER BY v.created_at DESC, v.id DESC`, [userId]);
+        const r = await c.query<VolumeRow>(`${VOLUME_SQL} WHERE v.user_id = $1 AND v.status = 'active' ORDER BY v.created_at DESC, v.id DESC LIMIT 100`, [userId]);
         return r.rows;
       });
       res.json(rows.map(toVolume));
@@ -80,6 +84,17 @@ export function volumeRoutes(config: Config): Router {
       const userId = req.user!.id;
       const b = parse(createVolumeBody, req.body);
       const row = await withUser(userCtx(req), async (c) => {
+        // Блокировка на пользователя: параллельные запросы не должны вместе перешагнуть лимит.
+        await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`volumes:${userId}`]);
+        const used = await c.query<{ n: number; gb: number }>(
+          `SELECT count(*)::int AS n, coalesce(sum(size_gb), 0)::int AS gb FROM volumes WHERE user_id = $1 AND status = 'active'`,
+          [userId],
+        );
+        const { n, gb } = used.rows[0]!;
+        if (n >= MAX_VOLUMES) throw conflict(`Можно иметь не более ${MAX_VOLUMES} томов`, 'LIMIT_REACHED');
+        if (gb + b.sizeGb > MAX_VOLUMES_TOTAL_GB) {
+          throw conflict(`Суммарный размер томов не может превышать ${MAX_VOLUMES_TOTAL_GB} ГБ`, 'LIMIT_REACHED');
+        }
         const dc = await c.query<{ id: number }>('SELECT id FROM datacenters WHERE code = $1 AND is_active', [b.datacenterCode]);
         if (!dc.rows[0]) throw notFound('Дата-центр не найден');
         const created = await c.query<{ id: number }>(

@@ -863,7 +863,9 @@ paths:
       tags: [Тома]
       operationId: createVolume
       summary: Создать том
-      description: Хранение тарифицируется помесячно за ГБ; начисление идёт вместе с биллингом инстансов.
+      description: |
+        Хранение тарифицируется помесячно за ГБ; начисление идёт вместе с биллингом инстансов. На аккаунт —
+        не более 10 действующих томов и 5000 ГБ суммарно (иначе `409 LIMIT_REACHED`).
       security:
         - cookieAuth: []
         - bearerAuth: []
@@ -887,6 +889,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
   /volumes/{id}:
@@ -1067,7 +1070,8 @@ paths:
       description: |
         Создаёт платёж в статусе `pending` текущему пользователю. Сумма — от 10 до 100000 ₽, не более двух
         знаков после запятой. Баланс изменится только после подтверждённого уведомления шлюза
-        (`/webhooks/payments`) либо в демо-режиме — после `/payments/{id}/demo-pay`.
+        (`/webhooks/payments`) либо в демо-режиме — после `/payments/{id}/demo-pay`. Неоплаченных платежей
+        за сутки может быть не более 10 (иначе `409 LIMIT_REACHED`).
       security:
         - cookieAuth: []
         - bearerAuth: []
@@ -1105,6 +1109,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /payments/{id}/demo-pay:
     post:
@@ -1770,7 +1775,7 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
           example: { error: { code: NOT_FOUND, message: Объект не найден } }
     Conflict:
-      description: Операция недопустима в текущем состоянии объекта (`INVALID_STATE`) либо конфликт данных (`CONFLICT`).
+      description: Операция недопустима в текущем состоянии объекта (`INVALID_STATE`), конфликт данных (`CONFLICT`) либо достигнут лимит на аккаунт (`LIMIT_REACHED`).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

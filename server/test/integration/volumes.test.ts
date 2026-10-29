@@ -176,3 +176,38 @@ describe('подключение к инстансу и удаление', () =>
     expect(res.body.error.code).toBe('CONSISTENCY');
   });
 });
+
+describe('ограничения на аккаунт', () => {
+  it('не более 10 томов: одиннадцатый — 409 LIMIT_REACHED; удалённый том место освобождает', async () => {
+    const u = await newUser(app);
+    const created: { id: number }[] = [];
+    for (let i = 0; i < 10; i++) created.push(await newVolume(u, { sizeGb: 10 }));
+    const over = await u.api.post('/api/volumes', { name: 'extra', datacenterCode: offer.dc, sizeGb: 10 });
+    expect(over.status).toBe(409);
+    expect(over.body.error.code).toBe('LIMIT_REACHED');
+
+    expect((await u.api.delete(`/api/volumes/${created[0]!.id}`)).status).toBe(204);
+    expect((await u.api.post('/api/volumes', { name: 'again', datacenterCode: offer.dc, sizeGb: 10 })).status).toBe(201);
+  });
+
+  it('суммарный размер активных томов — не более 5000 ГБ', async () => {
+    const u = await newUser(app);
+    await newVolume(u, { sizeGb: 4000 });
+    const over = await u.api.post('/api/volumes', { name: 'big', datacenterCode: offer.dc, sizeGb: 1001 });
+    expect(over.status).toBe(409);
+    expect(over.body.error.code).toBe('LIMIT_REACHED');
+    expect((await u.api.post('/api/volumes', { name: 'fit', datacenterCode: offer.dc, sizeGb: 1000 })).status).toBe(201);
+  });
+
+  it('параллельные запросы вместе не перешагивают лимит', async () => {
+    const u = await newUser(app);
+    for (let i = 0; i < 8; i++) await newVolume(u, { sizeGb: 10 });
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => u.api.post('/api/volumes', { name: `race-${i}`, datacenterCode: offer.dc, sizeGb: 10 })),
+    );
+    expect(results.filter((r) => r.status === 201)).toHaveLength(2);
+    expect(results.filter((r) => r.status === 409)).toHaveLength(3);
+    const n = (await sql<{ n: number }>("SELECT count(*)::int AS n FROM volumes WHERE user_id = $1 AND status = 'active'", [u.id]))[0]!.n;
+    expect(n).toBe(10);
+  });
+});
