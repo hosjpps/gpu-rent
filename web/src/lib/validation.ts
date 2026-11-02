@@ -12,7 +12,8 @@ export function validateEmail(email: string): string | null {
 export function validatePassword(password: string): string | null {
   if (!password) return 'Введите пароль';
   if (password.length < 8) return 'Пароль не короче 8 символов';
-  if (password.length > 72) return 'Пароль не длиннее 72 символов';
+  // bcrypt берёт 72 байта, и сервер считает именно байты UTF-8 (кириллица — 2 байта на символ)
+  if (new TextEncoder().encode(password).length > 72) return 'Пароль не длиннее 72 байт (кириллица — 2 байта на символ)';
   return null;
 }
 
@@ -41,6 +42,6 @@ export function validateAmount(raw: string): string | null {
   const n = Number(raw.replace(',', '.'));
   if (!raw.trim() || !Number.isFinite(n)) return 'Введите сумму числом';
   if (n < 10) return 'Минимальная сумма пополнения — 10 ₽';
-  if (n > 1_000_000) return 'Максимальная сумма за раз — 1 000 000 ₽';
+  if (n > 100_000) return 'Максимальная сумма за раз — 100 000 ₽';
   return null;
 }

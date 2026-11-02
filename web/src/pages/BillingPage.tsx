@@ -1,7 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useBalance, useCreatePayment, useDemoPay, useMe, useSpend, useTransactions } from '../api/hooks';
-import type { PaymentCreated } from '../api/types';
 import { BarChart } from '../components/BarChart';
 import { ErrorNote } from '../components/ErrorNote';
 import { IconWallet } from '../components/icons';
@@ -13,13 +12,14 @@ import {
   formatMoney,
   formatMoneyPrecise,
   pad,
-  toDateInput,
   toNumber,
   TX_LABEL,
 } from '../lib/format';
 import { validateAmount } from '../lib/validation';
 
 const QUICK_AMOUNTS = [500, 1000, 5000, 10000];
+
+const PAYMENT_STATUS_TEXT = { pending: 'ожидает', succeeded: 'оплачен', failed: 'отклонён', refunded: 'возвращён' } as const;
 
 export function BillingPage() {
   return (
@@ -74,20 +74,49 @@ function TopUpCard() {
   const pay = useDemoPay();
   const [amount, setAmount] = useState('1000');
   const [error, setError] = useState<string | null>(null);
-  const [payment, setPayment] = useState<PaymentCreated | null>(null);
+  // Незавершённый платёж держим в адресе (?payment=<id>, как в confirmationUrl сервера):
+  // так к нему можно вернуться после обновления страницы или по ссылке
+  const [params, setParams] = useSearchParams();
+  const raw = params.get('payment');
+  const paymentId = raw !== null && /^\d{1,9}$/.test(raw) ? Number(raw) : null;
+  const [paymentAmount, setPaymentAmount] = useState<string | null>(null);
+
+  function setPayment(id: number | null) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id === null) next.delete('payment');
+        else next.set('payment', String(id));
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
   function submit(e: FormEvent) {
     e.preventDefault();
     const err = validateAmount(amount);
     setError(err);
     if (err) return;
-    create.mutate(Number(amount.replace(',', '.')), { onSuccess: setPayment });
+    create.mutate(Number(amount.replace(',', '.')), {
+      onSuccess: (p) => {
+        setPaymentAmount(p.payment.amount);
+        setPayment(p.payment.id);
+      },
+    });
   }
 
-  function demoPay(p: PaymentCreated) {
-    pay.mutate(p.payment.id, {
-      onSuccess: () => {
-        toast(`Баланс пополнен на ${formatMoney(p.payment.amount)}`);
+  function demoPay(id: number) {
+    pay.mutate(id, {
+      onSuccess: (r) => {
+        toast(
+          r.credited
+            ? `Баланс пополнен на ${formatMoney(r.payment.amount)}`
+            : r.payment.status === 'succeeded'
+              ? 'Платёж уже был оплачен, повторно ничего не зачислено'
+              : `Платёж не оплачен (статус: ${PAYMENT_STATUS_TEXT[r.payment.status]}), баланс не изменился`,
+        );
+        setPaymentAmount(null);
         setPayment(null);
       },
     });
@@ -96,18 +125,25 @@ function TopUpCard() {
   return (
     <section className="card">
       <h2>Пополнение</h2>
-      {payment ? (
+      {paymentId !== null ? (
         <div className="stack">
           <p>
-            Платёж № {payment.payment.id} на сумму <strong>{formatMoney(payment.payment.amount)}</strong> создан.
+            Платёж № {paymentId}
+            {paymentAmount !== null && (
+              <>
+                {' '}
+                на сумму <strong>{formatMoney(paymentAmount)}</strong>
+              </>
+            )}
+            .
           </p>
           <p className="muted small">
-            Демо-режим: настоящий платёжный шлюз не подключён, деньги не списываются с карты. Кнопка ниже имитирует
+            Если платёж уже оплачен, повторное нажатие ничего не зачислит. Демо-режим: настоящий платёжный шлюз не подключён, деньги не списываются с карты. Кнопка ниже имитирует
             уведомление шлюза об успешной оплате.
           </p>
           <ErrorNote error={pay.error} />
           <div className="row">
-            <button type="button" className="btn btn-primary" disabled={pay.isPending} onClick={() => demoPay(payment)}>
+            <button type="button" className="btn btn-primary" disabled={pay.isPending} onClick={() => demoPay(paymentId)}>
               {pay.isPending ? 'Оплачиваем…' : 'Оплатить (демо)'}
             </button>
             <button
@@ -116,12 +152,18 @@ function TopUpCard() {
               disabled={pay.isPending}
               onClick={() => {
                 pay.reset();
+                setPaymentAmount(null);
                 setPayment(null);
               }}
             >
-              Отмена
+              Закрыть
             </button>
           </div>
+          <p className="muted small">
+            Закрытие не отменяет платёж: вернуться к нему можно по адресу
+            {' '}
+            <span className="mono">/billing?payment={paymentId}</span>.
+          </p>
         </div>
       ) : (
         <form className="stack" onSubmit={submit} noValidate>
@@ -163,13 +205,17 @@ const PERIODS = [
   { days: 90, label: '90 дней' },
 ];
 
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+const todayMoscow = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow' }).format(new Date());
+
 function SpendSection() {
   const [days, setDays] = useState(30);
+  // Сервер считает сутки по Москве, поэтому «сегодня» берём по Москве, а не по поясу браузера
   const range = useMemo(() => {
-    const to = new Date();
+    const to = new Date(`${todayMoscow()}T00:00:00Z`);
     const from = new Date(to);
-    from.setDate(from.getDate() - (days - 1));
-    return { from: toDateInput(from), to: toDateInput(to), start: from };
+    from.setUTCDate(from.getUTCDate() - (days - 1));
+    return { from: isoDay(from), to: isoDay(to), start: from };
   }, [days]);
   const spend = useSpend(range.from, range.to);
 
@@ -178,9 +224,9 @@ function SpendSection() {
     const byDay = new Map((spend.data?.byDay ?? []).map((d) => [d.day.slice(0, 10), toNumber(d.amount)]));
     return Array.from({ length: days }, (_, i) => {
       const d = new Date(range.start);
-      d.setDate(d.getDate() + i);
-      const key = toDateInput(d);
-      return { label: `${pad(d.getDate())}.${pad(d.getMonth() + 1)}`, title: formatDate(key), value: byDay.get(key) ?? 0 };
+      d.setUTCDate(d.getUTCDate() + i);
+      const key = isoDay(d);
+      return { label: `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}`, title: formatDate(key), value: byDay.get(key) ?? 0 };
     });
   }, [spend.data, days, range.start]);
 
@@ -215,6 +261,11 @@ function SpendSection() {
             ariaLabel={`Расходы по дням за последние ${days} дней`}
             valueTitle="Расход"
           />
+          {toNumber(spend.data.storage) > 0 && (
+            <p className="muted small" data-testid="spend-storage">
+              Хранение томов (не входит в таблицу по инстансам): <span className="mono">{formatMoneyPrecise(spend.data.storage)}</span>
+            </p>
+          )}
           {spend.data.byInstance.length > 0 && (
             <>
               <h3>По инстансам</h3>

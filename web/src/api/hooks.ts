@@ -22,6 +22,7 @@ import type {
   LaunchRequest,
   NewPrice,
   Page,
+  Payment,
   PaymentCreated,
   Spend,
   SshKey,
@@ -327,7 +328,7 @@ export function useCreatePayment() {
 export function useDemoPay() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (paymentId: number) => api.post(`/payments/${paymentId}/demo-pay`),
+    mutationFn: (paymentId: number) => api.post<{ payment: Payment; credited: boolean }>(`/payments/${paymentId}/demo-pay`),
     onSuccess: () =>
       Promise.all([keys.balance, keys.transactions, keys.me].map((queryKey) => qc.invalidateQueries({ queryKey }))),
   });

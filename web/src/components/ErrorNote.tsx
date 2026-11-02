@@ -3,7 +3,11 @@ import { ApiError } from '../api/client';
 
 /** Текст ошибки для пользователя. Сообщения сервера уже на русском. */
 export function errorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
+  if (error instanceof ApiError) {
+    // Для ошибок проверки сервер в details называет причину: показываем первую
+    const first = Array.isArray(error.details) ? (error.details[0] as { message?: unknown } | undefined)?.message : undefined;
+    return typeof first === 'string' && first ? `${error.message}: ${first}` : error.message;
+  }
   if (error instanceof Error) return 'Что-то пошло не так. Попробуйте ещё раз.';
   return 'Неизвестная ошибка.';
 }

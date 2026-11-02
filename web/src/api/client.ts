@@ -1,18 +1,20 @@
 // Единый HTTP-клиент: все запросы к API идут только через request().
 
 export interface ApiErrorBody {
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; details?: unknown };
 }
 
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details: unknown;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -91,6 +93,7 @@ export async function request<T>(method: string, path: string, opts: Options = {
       res.status,
       err?.code ?? `HTTP_${res.status}`,
       err?.message ?? FALLBACK[res.status] ?? `Ошибка ${res.status}`,
+      err?.details,
     );
   }
   return data as T;

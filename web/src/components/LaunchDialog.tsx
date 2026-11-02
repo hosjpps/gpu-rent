@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { ApiError } from '../api/client';
 import { useBalance, useLaunchInstance, useMe, useMyTemplates, useSshKeys, useTemplates, useVolumes } from '../api/hooks';
 import type { GpuOffer, LaunchRequest, PricingType } from '../api/types';
 import { HOURS_IN_DAY, HOURS_IN_MONTH, hourlyCost, pricePerGpu } from '../lib/cost';
@@ -167,7 +168,11 @@ export function LaunchDialog({
         </div>
 
         <div className="grid-2">
-          <Field label={`Число GPU (1–${maxCount})`} error={errors.count}>
+          <Field
+            label={`Число GPU (1–${maxCount})`}
+            error={errors.count}
+            hint="Все GPU инстанса выделяются на одной ноде дата-центра"
+          >
             <input
               type="number"
               name="gpuCount"
@@ -324,6 +329,11 @@ export function LaunchDialog({
         </div>
 
         <ErrorNote error={launch.error} />
+        {launch.error instanceof ApiError && launch.error.code === 'NO_CAPACITY' && (
+          <p className="field-hint">
+            Свободные GPU могут быть разбросаны по разным нодам: ни на одной из них нет столько сразу. Уменьшите число GPU.
+          </p>
+        )}
         <div className="row end">
           <button type="button" className="btn" onClick={onClose} disabled={launch.isPending}>
             Отмена

@@ -146,6 +146,7 @@ export interface Spend {
   from: string;
   to: string;
   total: string;
+  storage: string;
   byDay: { day: string; amount: string }[];
   byInstance: { instanceId: string; name: string; amount: string }[];
 }

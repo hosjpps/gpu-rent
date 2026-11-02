@@ -1598,7 +1598,7 @@ fieldset {
   font-weight: 620;
   letter-spacing: -0.03em;
   line-height: 1.25;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 .stat-unit {
   font-size: 0.95rem;
@@ -2503,7 +2503,13 @@ progress::-moz-progress-bar {
     padding: 14px;
   }
   .stat-value {
-    font-size: 1.3rem;
+    font-size: clamp(0.95rem, 4.4vw, 1.3rem);
+  }
+  .stat > .stat-value {
+    grid-column: 1 / -1;
+  }
+  .stat > .stat-icon {
+    grid-row: 1;
   }
   .stat-icon {
     width: 32px;
