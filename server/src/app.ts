@@ -38,9 +38,11 @@ export function createApp(env: NodeJS.ProcessEnv = process.env, prebuilt?: Confi
     req.log = logger.child({ reqId: req.id });
     res.setHeader('X-Request-Id', req.id);
     const started = process.hrtime.bigint();
+    // К моменту 'finish' вложенный роутер уже срезал префикс из req.url, поэтому путь берём до него.
+    const path = req.originalUrl.split('?')[0];
     res.on('finish', () => {
       const ms = Number(process.hrtime.bigint() - started) / 1e6;
-      req.log.info({ method: req.method, path: req.path, status: res.statusCode, ms: Math.round(ms) }, 'request');
+      req.log.info({ method: req.method, path, status: res.statusCode, ms: Math.round(ms) }, 'request');
     });
     next();
   });

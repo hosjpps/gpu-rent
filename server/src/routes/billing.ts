@@ -12,10 +12,10 @@ import { idSchema, limitSchema, parse } from '../schemas';
 
 const MAX_SPEND_DAYS = 366;
 
-// Дата настоящая? 31 февраля JS молча превращает в март, а PostgreSQL такую строку отвергнет (был бы 500): сверяем обратным преобразованием.
+// Дата настоящая? 31 февраля JS молча превращает в март, а PostgreSQL такую строку отвергнет (был бы 500): сверяем обратным преобразованием. Год 0000 PostgreSQL тоже отвергает.
 const isRealMoment = (s: string): boolean => {
   const t = Date.parse(s);
-  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s.slice(0, 10);
+  return !Number.isNaN(t) && s >= '0001-01-01' && new Date(t).toISOString().slice(0, 10) === s.slice(0, 10);
 };
 
 // Момент в курсоре хранится с микросекундами: JS Date режет до миллисекунд, и при сравнении (created_at, id) строки терялись бы.

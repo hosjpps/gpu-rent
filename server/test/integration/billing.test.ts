@@ -189,7 +189,8 @@ describe('история операций: keyset-пагинация', () => {
   it('некорректные курсор и limit — 400, а не 500', async () => {
     const forged = Buffer.from(JSON.stringify({ t: '2026-02-31T00:00:00.000000Z', id: 1 })).toString('base64url');
     const wrongType = Buffer.from(JSON.stringify({ t: 5, id: 'x' })).toString('base64url');
-    for (const cursor of ['abc', '###', forged, wrongType, Buffer.from('null').toString('base64url')]) {
+    const year0 = Buffer.from(JSON.stringify({ t: '0000-01-01T00:00:00.000000Z', id: 1 })).toString('base64url');
+    for (const cursor of ['abc', '###', forged, year0, wrongType, Buffer.from('null').toString('base64url')]) {
       const res = await u.api.get(`/api/billing/transactions?cursor=${encodeURIComponent(cursor)}`);
       expect(res.status, cursor).toBe(400);
       expect(res.body.error.code).toBe('INVALID_CURSOR');
@@ -257,6 +258,7 @@ describe('расходы /billing/spend', () => {
     expect((await u.api.get('/api/billing/spend?from=2025-01-01&to=2026-01-02')).status).toBe(400); // 367
     expect((await u.api.get('/api/billing/spend?from=2025-05-02&to=2025-05-01')).status).toBe(400);
     expect((await u.api.get('/api/billing/spend?from=2025-02-31&to=2025-03-01')).status).toBe(400);
+    expect((await u.api.get('/api/billing/spend?from=0000-01-01&to=0000-01-02')).status).toBe(400); // года 0000 в PostgreSQL нет
     expect((await u.api.get('/api/billing/spend?from=abc')).status).toBe(400);
     expect((await u.api.get('/api/billing/spend?from=2025-01-01&from=2025-01-02')).status).toBe(400);
   });

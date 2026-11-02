@@ -75,7 +75,7 @@ describe('SSH-ключи', () => {
     const foreign = await thief.api.post('/api/instances', { name: 'x', datacenterCode: offer.dc, gpuModel: offer.model, gpuCount: 1, pricingType: 'on_demand', templateId: 1, sshKeyId: mine.body.id });
     const missing = await thief.api.post('/api/instances', { name: 'x', datacenterCode: offer.dc, gpuModel: offer.model, gpuCount: 1, pricingType: 'on_demand', templateId: 1, sshKeyId: 99_999_999 });
     expect(foreign.status).toBe(missing.status);
-    expect(foreign.status).toBeGreaterThanOrEqual(400);
+    expect(foreign.status).toBe(404);
     expect(foreign.body).toEqual(missing.body);
     expect(await sql('SELECT 1 FROM instances WHERE user_id = $1', [thief.id])).toHaveLength(0);
   });

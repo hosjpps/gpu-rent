@@ -42,6 +42,8 @@ const DB_ERRORS: Record<string, DbErrorInfo> = {
   GR004: { status: 404, code: 'NOT_FOUND', message: 'Объект не найден' },
   GR005: { status: 422, code: 'CONSISTENCY', message: 'Данные запроса не согласованы между собой' },
   GR006: { status: 500, code: 'CONFIG', message: 'Ошибка конфигурации сервера' },
+  '22021': { status: 400, code: 'VALIDATION_ERROR', message: 'Недопустимые символы в тексте (например, NUL)' },
+  '22P05': { status: 400, code: 'VALIDATION_ERROR', message: 'Недопустимые символы в тексте (например, NUL)' },
   '23505': { status: 409, code: 'CONFLICT', message: 'Такая запись уже существует' },
   '23503': { status: 422, code: 'VALIDATION', message: 'Ссылка на несуществующий или чужой объект' },
   '23514': { status: 422, code: 'VALIDATION', message: 'Значение не проходит проверку ограничений' },
@@ -85,16 +87,24 @@ const ZOD_MESSAGES: Record<string, string> = {
   unrecognized_keys: 'Лишние поля в запросе',
 };
 
+const HAS_CYRILLIC = /[А-Яа-яЁё]/;
+
+function zodMessage(i: ZodError['issues'][number]): string {
+  if (i.code === 'invalid_type' && i.received === 'undefined') return 'Обязательное поле';
+  // Русский текст, заданный в схеме, важнее; английские тексты zod по умолчанию заменяем
+  if (HAS_CYRILLIC.test(i.message)) return i.message;
+  if (i.code === 'too_small' || i.code === 'too_big') {
+    const small = i.code === 'too_small';
+    const bound = small ? i.minimum : i.maximum;
+    if (i.type === 'string') return small ? `Не короче ${bound} симв.` : `Не длиннее ${bound} симв.`;
+    if (i.type === 'array') return small ? `Не меньше ${bound} элементов` : `Не больше ${bound} элементов`;
+    return small ? `Не меньше ${bound}` : `Не больше ${bound}`;
+  }
+  return ZOD_MESSAGES[i.code] ?? 'Неверное значение';
+}
+
 export function zodDetails(e: ZodError): { path: string; message: string }[] {
-  return e.issues.map((i) => ({
-    path: i.path.join('.'),
-    message:
-      i.code === 'invalid_type' && i.received === 'undefined'
-        ? 'Обязательное поле'
-        : i.code === 'custom' || i.code === 'too_small' || i.code === 'too_big'
-          ? i.message
-          : (ZOD_MESSAGES[i.code] ?? i.message),
-  }));
+  return e.issues.map((i) => ({ path: i.path.join('.'), message: zodMessage(i) }));
 }
 
 /** Приводит любую пойманную ошибку к AppError. Неизвестные ошибки становятся 500 без подробностей. */
@@ -103,6 +113,10 @@ export function toAppError(e: unknown): AppError {
   if (e instanceof ZodError) return new AppError(400, 'VALIDATION_ERROR', 'Некорректные данные запроса', zodDetails(e));
   // Express бросает URIError, когда параметр пути не раскодировать (например, /instances/%): это ошибка клиента, не сервера
   if (e instanceof URIError) return new AppError(400, 'BAD_REQUEST', 'Некорректный адрес запроса');
+  // Ошибка распаковки тела (Content-Encoding: gzip с мусором): zlib даёт code Z_*, status у неё нет
+  if (typeof e === 'object' && e !== null && typeof (e as { code?: unknown }).code === 'string' && (e as { code: string }).code.startsWith('Z_')) {
+    return new AppError(400, 'BAD_REQUEST', 'Тело запроса не удалось распаковать');
+  }
   if (typeof e === 'object' && e !== null && 'type' in e) {
     const type = (e as { type: unknown }).type;
     if (type === 'entity.too.large') return new AppError(413, 'PAYLOAD_TOO_LARGE', 'Тело запроса больше 32 КБ');

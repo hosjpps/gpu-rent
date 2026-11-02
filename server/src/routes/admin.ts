@@ -8,7 +8,7 @@ import { badRequest, conflict, notFound, sqlState } from '../errors';
 import { NO_STORE, iso, requireAdmin, requireSession, userCtx, wrap } from '../http';
 import { authenticate, requireUser } from '../auth/middleware';
 import { decodeCursor, encodeCursor } from '../cursor';
-import { idParams, limitSchema, nodeStatusBody, parse, setPriceBody } from '../schemas';
+import { idParams, idSchema, limitSchema, nodeStatusBody, parse, setPriceBody } from '../schemas';
 
 // ---- входные данные, которых нет в schemas.ts ----
 
@@ -20,7 +20,7 @@ const usersQuery = z.object({
   offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
 });
 const auditQuery = z.object({ cursor: z.string().max(200).optional(), limit: limitSchema });
-const auditCursor = z.object({ id: z.number().int().positive() });
+const auditCursor = z.object({ id: idSchema });
 
 const DAY_MS = 24 * 3600 * 1000;
 const MAX_PERIOD_DAYS = 366;
@@ -37,7 +37,8 @@ function shiftDays(date: string, days: number): string {
 /** 2026-02-31 по формату проходит, но такой даты нет: туда-обратно строка меняется. */
 const isRealDate = (s: string): boolean => {
   const t = Date.parse(`${s}T00:00:00Z`);
-  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s;
+  // год < 0001 JS принимает, а PostgreSQL отвергает (date/time field value out of range)
+  return !Number.isNaN(t) && s >= '0001-01-01' && new Date(t).toISOString().slice(0, 10) === s;
 };
 
 // ---- запросы, которые используются в нескольких местах ----
@@ -246,12 +247,17 @@ export function adminRoutes(config: Config): Router {
         const key = keys.rows[0];
         if (!key) throw notFound('Дата-центр или модель GPU не найдены', 'NOT_FOUND');
 
-        // FOR UPDATE: два администратора одновременно не закроют один и тот же период
+        // Консультативная блокировка на (ДЦ, модель, тариф): второй администратор ждёт коммита первого и видит его строку
+        // уже новым снимком, поэтому FOR UPDATE ниже работает на актуальных данных, а не даёт 23P01.
+        await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`gpu_price:${key.dc}:${key.model}:${body.pricingType}`]);
+        // Граница периодов — момент после получения блокировки (clock_timestamp), а не начало транзакции (now()): иначе
+        // период второго администратора начался бы раньше периода, уже закоммиченного первым.
+        const at = (await c.query<{ t: string }>('SELECT clock_timestamp()::text AS t')).rows[0]!.t;
         const current = await c.query<{ id: number; same: boolean }>(
           `SELECT id, price_per_hour = $4::numeric AS same FROM gpu_prices
-           WHERE datacenter_id = $1 AND gpu_model_id = $2 AND pricing_type = $3 AND valid_during @> now()
+           WHERE datacenter_id = $1 AND gpu_model_id = $2 AND pricing_type = $3 AND valid_during @> $5::timestamptz
            FOR UPDATE`,
-          [key.dc, key.model, body.pricingType, body.pricePerHour],
+          [key.dc, key.model, body.pricingType, body.pricePerHour, at],
         );
         const cur = current.rows[0];
         let id: number;
@@ -260,12 +266,12 @@ export function adminRoutes(config: Config): Router {
           // та же цена повторно: ничего не меняем, чтобы не дробить историю и не засорять журнал
           id = cur.id;
         } else {
-          // период закрывается моментом now() транзакции, новый открывается с него же: ни пересечения, ни разрыва
-          if (cur) await c.query(`UPDATE gpu_prices SET valid_during = tstzrange(lower(valid_during), now(), '[)') WHERE id = $1`, [cur.id]);
+          // период закрывается моментом at, новый открывается с него же: ни пересечения, ни разрыва
+          if (cur) await c.query(`UPDATE gpu_prices SET valid_during = tstzrange(lower(valid_during), $2::timestamptz, '[)') WHERE id = $1`, [cur.id, at]);
           const ins = await c.query<{ id: number }>(
             `INSERT INTO gpu_prices (datacenter_id, gpu_model_id, pricing_type, price_per_hour, valid_during)
-             VALUES ($1, $2, $3, $4::numeric, tstzrange(now(), NULL, '[)')) RETURNING id`,
-            [key.dc, key.model, body.pricingType, body.pricePerHour],
+             VALUES ($1, $2, $3, $4::numeric, tstzrange($5::timestamptz, NULL, '[)')) RETURNING id`,
+            [key.dc, key.model, body.pricingType, body.pricePerHour, at],
           );
           id = ins.rows[0]!.id;
           changed = true;

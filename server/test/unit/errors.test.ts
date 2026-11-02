@@ -129,4 +129,26 @@ describe('zodDetails', () => {
     const r = z.object({ a: z.string() }).safeParse({});
     expect(zodDetails((r as { error: z.ZodError }).error)).toEqual([{ path: 'a', message: 'Обязательное поле' }]);
   });
+
+  it('too_small / too_big / invalid_union — по-русски, без латиницы', () => {
+    const schema = z.object({
+      s: z.string().min(20),
+      t: z.string().max(3),
+      n: z.number().min(1),
+      m: z.number().max(5),
+      a: z.array(z.string()).min(1),
+      u: z.union([z.string(), z.number()]),
+      c: z.string().min(2, 'Слишком коротко'),
+    });
+    const r = schema.safeParse({ s: 'k', t: 'long', n: 0, m: 9, a: [], u: null, c: 'x' });
+    const byPath = Object.fromEntries(zodDetails((r as { error: z.ZodError }).error).map((d) => [d.path, d.message]));
+    expect(byPath['s']).toBe('Не короче 20 симв.');
+    expect(byPath['t']).toBe('Не длиннее 3 симв.');
+    expect(byPath['n']).toBe('Не меньше 1');
+    expect(byPath['m']).toBe('Не больше 5');
+    expect(byPath['a']).toBe('Не меньше 1 элементов');
+    expect(byPath['u']).toBe('Неверное значение');
+    expect(byPath['c']).toBe('Слишком коротко');
+    for (const m of Object.values(byPath)) expect(m).not.toMatch(/[A-Za-z]{3,}/);
+  });
 });

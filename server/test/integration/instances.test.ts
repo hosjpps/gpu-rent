@@ -134,6 +134,22 @@ describe('запуск инстанса', () => {
     expect((await short.api.post('/api/instances', launchBody(offer))).status).toBe(402);
   });
 
+  it('запуск и возобновление начисляют за работающие инстансы до проверки баланса', async () => {
+    const cost = Number(hourlyCost(offer.priceOnDemand, 1));
+    const u = await newUser(app);
+    await topUp(u.api, Math.ceil(cost * 1.5));
+    const first = await launch(u, offer);
+    const stopped = await launch(u, offer);
+    expect((await u.api.post(`/api/instances/${stopped.id}/stop`)).status).toBe(200);
+    // 10 часов работы первого инстанса: реальный долг, которого баланс в таблице ещё не отражает
+    await sql("UPDATE instances SET last_billed_at = now() - interval '10 hours' WHERE id = $1", [first.id]);
+    const res = await u.api.post('/api/instances', launchBody(offer));
+    expect(res.status).toBe(402);
+    expect(res.body.error.code).toBe('INSUFFICIENT_FUNDS');
+    expect((await u.api.post(`/api/instances/${stopped.id}/resume`)).status).toBe(402);
+    await terminateAllInstances(u);
+  });
+
   it('нет свободных GPU — 409 NO_CAPACITY; после завершения чужого инстанса место появляется', async () => {
     const rich = await newUser(app, { balance: 100_000 });
     const taken: string[] = [];
@@ -297,6 +313,26 @@ describe('жизненный цикл: остановка, возобновле�
     expect((await u.api.get('/api/instances/00000000-0000-4000-8000-000000000000')).status).toBe(404);
     expect((await u.api.post('/api/instances/00000000-0000-4000-8000-000000000000/stop')).status).toBe(404);
     expect(second.id).not.toBe(first.id);
+  });
+
+  it('лимит списка не скрывает работающий инстанс: активные идут раньше завершённых', async () => {
+    const u = await newUser(app, { balance: 5000 });
+    const running = await launch(u, offer, { name: 'old-running' });
+    const done = await launch(u, offer, { name: 'done' });
+    expect((await u.api.post(`/api/instances/${done.id}/terminate`)).status).toBe(200);
+    await sql(
+      `INSERT INTO instances (user_id, node_id, gpu_model_id, template_id, name, pricing_type, gpu_count, container_disk_gb,
+                              price_per_hour_snapshot, status, created_at, terminated_at)
+       SELECT user_id, node_id, gpu_model_id, template_id, 'bulk-' || g, pricing_type, gpu_count, container_disk_gb,
+              price_per_hour_snapshot, 'terminated', now() + g * interval '1 second', now()
+       FROM instances, generate_series(1, 205) g WHERE id = $1`,
+      [done.id],
+    );
+    const list = await u.api.get('/api/instances');
+    expect(list.status).toBe(200);
+    expect(list.body).toHaveLength(200);
+    expect(list.body[0].id).toBe(running.id);
+    expect(list.body.filter((i: { status: string }) => i.status === 'running')).toHaveLength(1);
   });
 
   it('?all=1 клиенту ничего лишнего не открывает', async () => {

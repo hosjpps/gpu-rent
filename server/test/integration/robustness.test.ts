@@ -70,6 +70,18 @@ describe('странные запросы не дают 500', () => {
     expect((await post(deep)).status).toBeLessThan(500);
   });
 
+  it('NUL в тексте и битый gzip — 400, а не 500', async () => {
+    const nul = 'a\u0000b';
+    const reg = await bare(app).post('/api/auth/register').set('X-Requested-With', 'fetch').set('Origin', ORIGIN).set('X-Forwarded-For', '10.20.30.41').send({ email: 'nul-test@example.test', password: 'test-password-123', fullName: nul });
+    expect(reg.status).toBe(400);
+    for (const [url, body] of [['/api/volumes', { name: nul, datacenterCode: 'x', sizeGb: 10 }], ['/api/ssh-keys', { name: nul, publicKey: 'ssh-ed25519 AAAA' }], ['/api/api-keys', { name: nul }]] as const) {
+      expect((await user.api.post(url, body)).status, url).toBeLessThan(500);
+    }
+    expect((await admin.get('/api/admin/users?q=%00')).status).toBeLessThan(500);
+    const gz = await bare(app).post('/api/payments').set('X-Requested-With', 'fetch').set('Origin', ORIGIN).set('Content-Type', 'application/json').set('Content-Encoding', 'gzip').send('garbage');
+    expect(gz.status).toBe(400);
+  });
+
   it('мусор в заголовках аутентификации и сессии', async () => {
     for (const headers of [{ Authorization: 'Bearer %' }, { Authorization: 'Bearer ' + 'x'.repeat(8000) }, { Cookie: 'sid=%; sid=%E0' }, { Cookie: 'a=b; ; =; sid' }]) {
       const res = await bare(app).get('/api/instances').set(headers);

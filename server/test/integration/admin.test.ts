@@ -140,8 +140,10 @@ describe('цены', () => {
   it('два одновременных изменения цены применяются по очереди: открытый период один, пересечений нет', async () => {
     const other = await loginAs(app, ADMIN.email, ADMIN.password);
     const body = (p: number) => ({ datacenterCode: offer.dc, gpuModel: offer.model, pricingType: 'spot', pricePerHour: p });
-    const [r1, r2] = await Promise.all([admin.post('/api/admin/prices', body(61.1)), other.post('/api/admin/prices', body(62.2))]);
-    expect([r1.status, r2.status].sort()).toEqual([201, 201]);
+    for (let round = 0; round < 5; round++) {
+      const [r1, r2] = await Promise.all([admin.post('/api/admin/prices', body(61.1 + round)), other.post('/api/admin/prices', body(62.2 + round))]);
+      expect([r1.status, r2.status].sort(), `раунд ${round}`).toEqual([201, 201]);
+    }
     const open = await sql<{ n: number }>(
       `SELECT count(*)::int AS n FROM gpu_prices WHERE upper_inf(valid_during) AND pricing_type = 'spot'
          AND datacenter_id = (SELECT id FROM datacenters WHERE code = $1) AND gpu_model_id = (SELECT id FROM gpu_models WHERE name = $2)`,
@@ -198,7 +200,7 @@ describe('панель, инфраструктура, пользователи, 
   });
 
   it('дашборд: неверный период — 400', async () => {
-    for (const q of ['from=2026-02-31&to=2026-03-01', 'from=2026-10-10&to=2026-10-01', 'from=2024-01-01&to=2026-01-01', 'from=abc']) {
+    for (const q of ['from=2026-02-31&to=2026-03-01', 'from=2026-10-10&to=2026-10-01', 'from=2024-01-01&to=2026-01-01', 'from=abc', 'from=0000-01-01&to=0000-01-02']) {
       expect((await admin.get(`/api/admin/dashboard?${q}`)).status, q).toBe(400);
     }
   });
@@ -287,6 +289,8 @@ describe('панель, инфраструктура, пользователи, 
     for (const bad of ['abc', Buffer.from('{"id":"x"}').toString('base64url'), Buffer.from('{"id":-1}').toString('base64url')]) {
       expect((await admin.get(`/api/admin/audit?cursor=${encodeURIComponent(bad)}`)).status, bad).toBe(400);
     }
+    const huge = Buffer.from('{"id":99999999999999999999}').toString('base64url');
+    expect((await admin.get(`/api/admin/audit?cursor=${encodeURIComponent(huge)}`)).status).toBe(400);
     expect((await admin.get('/api/admin/audit?limit=0')).status).toBe(400);
   });
 });

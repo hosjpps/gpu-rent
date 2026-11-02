@@ -365,7 +365,7 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/GpuOffer' }
               example:
-                - datacenter: { code: msk-1, name: Москва-1, city: Москва }
+                - datacenter: { code: MSK-1, name: Москва-1, city: Москва }
                   model: { name: RTX 4090, vramGb: 24 }
                   total: 24
                   free: 17
@@ -643,7 +643,7 @@ paths:
       operationId: listInstances
       summary: Список инстансов
       description: |
-        Свои инстансы, новые первыми, не больше 200. Перед чтением выполняется начисление за работу
+        Свои инстансы, не больше 200: сначала не завершённые, затем завершённые, внутри групп новые первыми. Перед чтением выполняется начисление за работу
         (биллинг при обращении), поэтому статус и баланс актуальны. Администратор с `?all=1` видит инстансы
         всех пользователей (в каждом есть `owner`).
       security:
@@ -688,7 +688,7 @@ paths:
             schema: { $ref: '#/components/schemas/CreateInstanceRequest' }
             example:
               name: train-1
-              datacenterCode: msk-1
+              datacenterCode: MSK-1
               gpuModel: RTX 4090
               gpuCount: 1
               pricingType: on_demand
@@ -786,7 +786,8 @@ paths:
       summary: Возобновить инстанс
       description: |
         Только остановленный (`stopped`). Подбираются свободные GPU того же дата-центра; цена фиксируется
-        заново на момент возобновления. Если свободных GPU нет — `409 NO_CAPACITY`.
+        заново на момент возобновления. Если свободных GPU нет — `409 NO_CAPACITY`. На балансе должна быть сумма
+        не меньше стоимости одного часа, иначе — `402 INSUFFICIENT_FUNDS`.
       security:
         - cookieAuth: []
         - bearerAuth: []
@@ -804,6 +805,11 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '402':
+          description: Недостаточно средств (`INSUFFICIENT_FUNDS`), баланс меньше стоимости одного часа.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: Инстанс не остановлен (`INVALID_STATE`) либо нет свободных GPU (`NO_CAPACITY`).
@@ -876,7 +882,7 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CreateVolumeRequest' }
-            example: { name: datasets, datacenterCode: msk-1, sizeGb: 100 }
+            example: { name: datasets, datacenterCode: MSK-1, sizeGb: 100 }
       responses:
         '201':
           description: Том создан.
@@ -1271,7 +1277,8 @@ paths:
       summary: Установить новую цену GPU
       description: |
         Только по cookie. Новая цена закрывает действующую в одной транзакции (период закрывается моментом
-        `now()`, новый открывается с него же: ни пересечения, ни разрыва). Уже запущенные инстансы
+        после взятия блокировки на пару «дата-центр, модель, тариф», новый открывается с него же: ни пересечения,
+        ни разрыва; одновременные изменения выстраиваются в очередь). Уже запущенные инстансы
         продолжают считаться по цене, зафиксированной при запуске. Если цена не изменилась — ничего не
         меняется, ответ `200` и `changed: false`.
       security:
@@ -1283,7 +1290,7 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/SetPriceRequest' }
-            example: { datacenterCode: msk-1, gpuModel: RTX 4090, pricingType: on_demand, pricePerHour: '52.0000' }
+            example: { datacenterCode: MSK-1, gpuModel: RTX 4090, pricingType: on_demand, pricePerHour: '52.0000' }
       responses:
         '200':
           description: Цена такая же, как действующая, — без изменений.
@@ -1303,6 +1310,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /admin/prices/storage:
     get:
@@ -1940,7 +1948,7 @@ components:
       type: object
       required: [code, name]
       properties:
-        code: { type: string, examples: [msk-1] }
+        code: { type: string, examples: [MSK-1] }
         name: { type: string }
 
     Datacenter:
@@ -2103,7 +2111,7 @@ components:
       additionalProperties: false
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
-        datacenterCode: { type: string, pattern: '^[A-Za-z0-9-]{2,16}$', examples: [msk-1], description: Код из `/catalog/gpus`. }
+        datacenterCode: { type: string, pattern: '^[A-Za-z0-9-]{2,16}$', examples: [MSK-1], description: Код из `/catalog/gpus`. }
         gpuModel: { type: string, minLength: 1, maxLength: 64, examples: [RTX 4090], description: Название модели из `/catalog/gpus`. }
         gpuCount: { type: integer, minimum: 1, maximum: 8 }
         pricingType: { $ref: '#/components/schemas/PricingType' }

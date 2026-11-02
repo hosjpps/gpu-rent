@@ -99,7 +99,8 @@ describe('локальный запуск src/index.ts', () => {
       expect(r).toMatchObject({ level: 30, reqId: expect.any(String), method: expect.any(String), path: expect.any(String), status: expect.any(Number), ms: expect.any(Number) });
       expect(Number.isNaN(Date.parse(r.time))).toBe(false);
     }
-    expect(requests.find((r) => r.reqId === requestId)).toMatchObject({ method: 'POST', status: 200 });
+    expect(requests.find((r) => r.reqId === requestId)).toMatchObject({ method: 'POST', status: 200, path: '/api/auth/login' });
+    expect(requests.some((r) => r.path === '/api/api-keys')).toBe(true); // путь полный, с префиксом вложенного роутера
     expect(requests.some((r) => r.status === 401 && r.userId === undefined)).toBe(true);
     expect(requests.some((r) => r.userId !== undefined)).toBe(true); // после входа запросы привязаны к пользователю
 

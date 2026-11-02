@@ -58,6 +58,7 @@ const INSTANCE_SQL = `
   LEFT JOIN ssh_keys k ON k.id = i.ssh_key_id
   LEFT JOIN users u ON u.id = i.user_id`;
 
+// Активные первыми, завершённые после них: лимит не должен скрывать работающий (и тарифицируемый) инстанс.
 const LIST_LIMIT = 200;
 
 function toInstance(r: InstanceRow, withOwner: boolean) {
@@ -125,7 +126,7 @@ export function instanceRoutes(config: Config): Router {
         // Фонового процесса нет (serverless): начисляем при обращении, чтобы статус и баланс были честными.
         await c.query('SELECT * FROM fn_bill_current_user()');
         const r = await c.query<InstanceRow>(
-          `${INSTANCE_SQL} WHERE ($1::boolean OR i.user_id = $2) ORDER BY i.created_at DESC LIMIT ${LIST_LIMIT}`,
+          `${INSTANCE_SQL} WHERE ($1::boolean OR i.user_id = $2) ORDER BY (i.status = 'terminated'), i.created_at DESC LIMIT ${LIST_LIMIT}`,
           [all, user.id],
         );
         return r.rows;
@@ -162,6 +163,10 @@ export function instanceRoutes(config: Config): Router {
           [b.datacenterCode, b.gpuModel],
         );
         if (!ref.rows[0]) throw notFound('Дата-центр или модель GPU не найдены');
+        // Чужой и несуществующий ключ неразличимы: оба дают 404, как для шаблона и тома.
+        if (b.sshKeyId != null && !(await c.query('SELECT 1 FROM ssh_keys WHERE id = $1 AND user_id = $2', [b.sshKeyId, user.id])).rows[0]) throw notFound('SSH-ключ не найден');
+        // Сначала начисляем за уже работающие инстансы: проверка баланса в fn_start_instance не должна видеть устаревшую сумму.
+        await c.query('SELECT * FROM fn_bill_current_user()');
         // Проверки (баланс, свободные GPU, шаблон, том, ключ) и выделение GPU — внутри функции БД, одной транзакцией.
         const started = await c.query<{ id: string }>(
           'SELECT fn_start_instance($1::bigint, $2::bigint, $3::bigint, $4::integer, $5::pricing_type, $6::bigint, $7::text, $8::integer, $9::bigint, $10::bigint) AS id',
@@ -188,6 +193,8 @@ export function instanceRoutes(config: Config): Router {
         const row = await withUser(userCtx(req), async (c) => {
           // Без этой проверки функция БД на чужой инстанс ответила бы 403, то есть подтвердила бы, что он существует.
           if (!(await loadInstance(c, id, user))) throw notFound('Инстанс не найден');
+          // Возобновление проверяет баланс, поэтому начисляем заранее (для остальных действий это безвредно).
+          if (action === 'resume') await c.query('SELECT * FROM fn_bill_current_user()');
           await c.query(`SELECT ${FUNCTION_BY_ACTION[action]}($1::uuid)`, [id]);
           return loadInstance(c, id, user);
         });
