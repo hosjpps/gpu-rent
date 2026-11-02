@@ -22,8 +22,9 @@ Extensions) на дату подготовки документа; на стра
 
 ## Пошаговая инструкция: пустой проект Neon до готовой БД
 
-Нужны: `psql` 16 и `bash` на машине, откуда выполняются команды; проект Neon с PostgreSQL 16 (версия выбирается при
-создании проекта, проверить в консоли — миграции проверены на 16).
+Нужны: `psql` 16 или новее и `bash` на машине, откуда выполняются команды; проект Neon с PostgreSQL 16 или новее (версия
+выбирается при создании проекта; у проекта сейчас 18.6, миграции и SQL-тесты проверены на 16 и 18). Клиент `pg_dump` для
+резервных копий должен быть не старее сервера (см. `.github/workflows/db-backup.yml`).
 
 1. **Создать проект** в консоли Neon. Регион выбрать ближе к функциям Vercel. Запомнить имя БД (по умолчанию `neondb`)
    и роль (по умолчанию `neondb_owner`).
@@ -47,7 +48,7 @@ Extensions) на дату подготовки документа; на стра
    пишет «схема актуальна».
 5. **Создать LOGIN-роль приложения** SQL-командой (не через консоль Neon):
    ```bash
-   export GPU_RENT_WEB_PASSWORD='…не короче 8 символов, лучше длинный случайный…'
+   export GPU_RENT_WEB_PASSWORD="$(openssl rand -hex 24)"   # без спецсимволов: пароль пойдёт в URL DATABASE_URL
    db/scripts/create_login_role.sh
    ```
    Роль `gpu_rent_web` становится членом `gpu_rent_app`; для неё заданы `search_path`, `statement_timeout = 15s`,
@@ -59,8 +60,8 @@ Extensions) на дату подготовки документа; на стра
    Полный `seed.sql` на Neon не грузить: он занимает сотни мегабайт. `reset.sh` на Neon не запускать: он делает
    `DROP DATABASE`.
 7. **Настроить приложение** (переменные окружения Vercel):
-   - `DATABASE_URL` = **pooled** адрес с ролью `gpu_rent_web`: `postgres://gpu_rent_web:ПАРОЛЬ@ep-имя-123456-pooler.регион.aws.neon.tech/neondb?sslmode=require`;
-   - `ENC_KEY`, `WEBHOOK_SECRET`, `CRON_SECRET` и остальные — как в `server/.env.example`/`config.ts`;
+   - `DATABASE_URL` = **pooled** адрес с ролью `gpu_rent_web`: `postgres://gpu_rent_web:ПАРОЛЬ@ep-имя-123456-pooler.регион.aws.neon.tech/neondb?sslmode=require`. Пароль в адресе — без спецсимволов (`openssl rand -hex 24` из шага 5). Если в нём есть `/`, `+`, `=`, `#`, `@`, их нужно закодировать (`%2F`, `%2B`, `%3D`, `%23`, `%40`): иначе адрес не разбирается и все запросы к БД дают 500;
+   - `ENC_KEY`, `WEBHOOK_SECRET`, `CRON_SECRET` и остальные — как в корневом `.env.example` и `server/src/config.ts` (полная инструкция по Vercel — [vercel.md](vercel.md));
    - `DB_POOL_MAX` оставить маленьким (по умолчанию 2): число соединений на Neon ограничено.
 8. **Проверить**: `GET /api/health?deep=1` вернёт `"db":"ok"`; вход под demo; `GET /api/catalog/gpus`.
 

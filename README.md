@@ -16,24 +16,30 @@
 
 ## Стек
 
-База данных реализована; серверная и клиентская части запланированы.
-
-- Сервер: Node.js 24 LTS, TypeScript, Express 4.
-- Клиент: React 18 + Vite, собирается в статику, которую раздаёт Nginx (Express обслуживает только `/api`).
-- СУБД: PostgreSQL 16 (`pgcrypto`, `btree_gist`, `citext`).
-- Кэш и сессии: Redis 7. Деплой: Docker Compose, Nginx, TLS.
+- Сервер: Node.js 24 LTS, TypeScript, Express 4. На Vercel всё приложение работает как одна serverless-функция (`api/index.ts`), локально — обычный процесс.
+- Клиент: React 18 + Vite, собирается в статику, которую раздаёт CDN Vercel; `/api/*` направляется в функцию.
+- СУБД: PostgreSQL (`pgcrypto`, `btree_gist`, `citext`): на Neon (бесплатный тариф, Frankfurt), локально 16; миграции проверены на 16 и 18.
+- Сессии хранятся в PostgreSQL (в БД только SHA-256 хэш токена), Redis не используется. Кэш каталога — HTTP-кэш CDN (`s-maxage`) и TanStack Query на клиенте.
+- Деплой: Vercel (Hobby) + Neon, инструкции — [docs/deploy/vercel.md](docs/deploy/vercel.md) и [docs/deploy/neon.md](docs/deploy/neon.md). Расписание биллинга и проверки — GitHub Actions и Vercel Cron.
 
 ## Структура
 
 ```text
-docs/reports/        отчёты П1–П4 (markdown-исходники)
+api/                 вход Vercel: export default createApp()
+server/              бэкенд (Express, TypeScript): src/, test/, openapi.yaml
+web/                 фронтенд (React, Vite), e2e-тесты Playwright в web/e2e
+vercel.json          сборка, rewrites, заголовки безопасности, Vercel Cron
+.github/workflows/   CI, вызов биллинга по расписанию, проверка доступности, резервная копия БД
+docs/reports/        отчёты (markdown-исходники)
 docs/diagrams/src/   диаграммы PlantUML
 docs/diagrams/png/   отрендеренные диаграммы
+docs/deploy/         развёртывание: Vercel, Neon, проверка резервной копии
+docs/screenshots/    снимки экранов приложения
 db/migrations/       SQL-миграции по порядку (NNNN_name.sql)
-db/seed/             детерминированные тестовые данные (~1,2 млн записей потребления)
+db/seed/             seed.sql (~1,2 млн записей потребления) и компактный seed_demo.sql
 db/tests/            SQL-тесты и тест конкурентного доступа
 db/bench/            сценарии EXPLAIN ANALYZE, результаты — в db/bench/results/
-db/scripts/          reset.sh, test.sh, bench.sh
+db/scripts/          reset.sh, test.sh, bench.sh, скрипты для Neon
 tools/               вспомогательные инструменты
 reports/             готовые отчёты в PDF
 ```
