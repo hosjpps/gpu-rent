@@ -1,0 +1,44 @@
+@startuml pr6-caching
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 12
+skinparam nodesep 22
+skinparam ranksep 36
+skinparam componentStyle uml2
+skinparam dpi 100
+
+title Слои кэширования GPU Rent: от браузера до базы данных
+
+package "Браузер" as BR {
+  component "Кэш TanStack Query (в памяти)\nкаталог, шаблоны: staleTime 30 с,\nкаталог обновляется раз в 60 с;\nпользователь: 5 мин; прочее: 10 с;\nинвалидация после мутаций" as TQ
+  component "HTTP-кэш браузера\n/assets/*: max-age=1 год, immutable\n(хэш в имени файла)" as BC
+}
+
+package "CDN Vercel" as CDN {
+  component "Статика SPA\nindex.html: max-age=0, must-revalidate\n/assets/*: immutable, сжатие gzip / br" as CS
+  component "Кэш ответов функции:\nтолько GET /api/catalog/gpus\nи /api/catalog/templates\ns-maxage=30, stale-while-revalidate=60\nx-vercel-cache: MISS -> HIT" as CC
+}
+
+package "Функция api/index (Express), fra1" as FN {
+  component "Публичный каталог: Cache-Control: public, s-maxage=30, ...\nПерсональные ответы и ошибки: private, no-store\n(CDN их не сохраняет)" as EX
+}
+
+database "Neon PostgreSQL\nv_gpu_availability, fn_*" as DB
+
+TQ -down-> CC : GET /api/catalog/*\n(HIT: функция не вызывается)
+TQ -down-> EX : персональные GET / POST /api/*\n(private, no-store: CDN не кэширует)
+BC -down-> CS : /assets/*, index.html
+CC -down-> EX : MISS или фоновое\nобновление (STALE)
+EX -down-> DB : SELECT / fn_*,\nпул max 2
+
+note right of DB
+  Redis не используется:
+  в serverless нет общего процесса,
+  кэшируется только публичный
+  каталог, а он уже на CDN
+end note
+
+@enduml

@@ -1,0 +1,63 @@
+@startuml pr5-architecture
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 14
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 13
+skinparam nodesep 18
+skinparam ranksep 30
+skinparam componentStyle uml2
+skinparam dpi 100
+
+title Серверная часть GPU Rent: монолит Express на Vercel, PostgreSQL на Neon
+
+component "Браузер: SPA\n(React, Vite)" as BROWSER
+component "Клиент API\nBearer gr_..." as APIC
+
+node "Vercel, регион fra1" as VERCEL {
+  component "CDN: статика SPA, кэш публичного\nкаталога (s-maxage=30);\nrewrite /api/(.*) -> функция" as CDN
+
+  package "Функция api/index.ts: createApp()" as FN {
+    component "Общий конвейер: request-id, pino,\nhelmet, лимит тела 32 КБ, csrfGuard" as PIPE
+
+    rectangle "routes/: authenticate, requireUser / requireAdmin,\nzod, обработчик" as ROUTES {
+      component "auth" as M_AUTH
+      component "system,\ndocs" as M_SYS
+      component "keys" as M_KEYS
+      component "instances,\nvolumes" as M_INST
+      component "billing,\npayments" as M_BILL
+      component "admin" as M_ADM
+    }
+
+    component "db.ts: пул pg (max 2);\nwithUser: BEGIN, set_config,\nзапросы, COMMIT / ROLLBACK" as DBL
+    component "Обработчик ошибок:\nединый формат,\nSQLSTATE -> HTTP" as ERR
+
+    PIPE -down-> ROUTES : маршрут
+    ROUTES -down-> DBL : withUser, query
+    ROUTES -right-> ERR : исключение
+  }
+}
+
+node "Neon, eu-central-1" as NEON {
+  component "Pooler Neon\n(PgBouncer, transaction)" as POOL
+  database "PostgreSQL, схема gpu_rent\nLOGIN gpu_rent_web:\nfn_*, RLS, ограничения" as PG
+}
+
+cloud "Vercel Cron\nGET /api/internal/billing\nраз в сутки" as VCRON
+cloud "GitHub Actions\nPOST /api/internal/billing\nкаждые 30 минут" as GHA
+cloud "Платёжный шлюз (демо)\nподпись HMAC-SHA256;\nуведомление формирует\nсам сервер" as GATE
+
+VCRON -[hidden]down- GHA
+GHA -[hidden]down- GATE
+
+BROWSER -down-> CDN : HTTPS, cookie __Host-sid
+APIC -down-> CDN : HTTPS
+CDN -down-> PIPE : функция
+DBL -down-> POOL : pg, TLS
+POOL -right-> PG : SQL
+VCRON -left-> PIPE : Bearer\nCRON_SECRET
+GHA -left-> PIPE : Bearer\nCRON_SECRET
+GATE -left-> PIPE : POST /api/webhooks/\npayments, X-Signature
+
+@enduml

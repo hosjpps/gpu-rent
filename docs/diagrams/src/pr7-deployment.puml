@@ -1,0 +1,51 @@
+@startuml pr7-deployment
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 12
+skinparam nodesep 26
+skinparam ranksep 40
+skinparam componentStyle uml2
+skinparam dpi 100
+
+title Развёртывание GPU Rent: Vercel (fra1), Neon (Франкфурт), GitHub
+
+component "Браузер\nпользователя" as BROWSER
+component "Ноутбук разработчика\ngit, Vercel CLI, psql,\nскрипты db/scripts" as DEV
+
+node "Vercel, тариф Hobby" as VERCEL {
+  component "Сборка (iad1)\nnpm ci, tsc + vite build;\nпубликует статику и функцию" as BUILD
+  component "CDN: статика SPA (web/dist),\nкэш каталога s-maxage=30,\nTLS, заголовки безопасности,\nrewrites из vercel.json" as CDN
+  component "Cron: GET /api/internal/billing\n0 3 * * * (окно 03:00-03:59 UTC)" as CRON
+  component "Функция api/index, регион fra1\nNode 24.x, Express createApp()\nмаксимум 60 с, пул pg: 2 соединения" as FN
+}
+
+cloud "GitHub: репозиторий hosjpps/gpu-rent\nGitHub Actions: ci, billing-cron (*/30),\nuptime (раз в час), db-backup (раз в сутки)\nworkflow-файлы подготовлены,\nна GitHub не опубликованы" as GH
+
+node "Neon, AWS eu-central-1 (Франкфурт), тариф Free" as NEON {
+  component "Direct endpoint\n(миграции, бэкап)" as DIRECT
+  component "Pooled endpoint\n(хост с -pooler, PgBouncer,\nрежим transaction)" as POOL
+  database "Compute: PostgreSQL 18.6\nсхема gpu_rent\nзасыпает через 5 минут простоя" as PG
+}
+
+DEV -right-> BUILD : vercel deploy --prod
+BROWSER -down-> CDN : HTTPS
+BUILD -down-> CDN : статика
+CDN -down-> FN : /api/* -> функция
+CRON -down-> FN : Bearer\nCRON_SECRET
+GH .left.> FN : POST billing, GET health\n(Bearer CRON_SECRET)
+
+FN -down-> POOL : TLS, роль gpu_rent_web\n(DATABASE_URL)
+DEV -down-> DIRECT : bootstrap_neon.sh,\nmigrate.sh;\nроль neondb_owner
+GH .down.> DIRECT : pg_dump
+
+POOL -down-> PG : SQL
+DIRECT -down-> PG : SQL
+
+BROWSER -[hidden]right-> CRON
+CDN -[hidden]right-> CRON
+FN -[hidden]right-> GH
+
+@enduml

@@ -1,0 +1,42 @@
+@startuml pr7-pipeline
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam ArrowFontSize 12
+skinparam nodesep 22
+skinparam ranksep 30
+skinparam dpi 100
+
+title Путь изменения: от коммита до production (миграции только вперёд-совместимые)
+
+start
+:Коммит в main\n(Conventional Commits);
+:Локальные проверки:\ntypecheck, vitest, SQL-тесты db/tests;
+partition "GitHub Actions: ci.yml (файл подготовлен)" {
+  fork
+    :db: PostgreSQL 16,\nreset.sh, test.sh;
+  fork again
+    :server: typecheck,\nvitest;
+  fork again
+    :web: typecheck,\nvite build;
+  end fork
+}
+:Миграция фазы expand вручную:\nmigrate.sh через direct endpoint\n(новые таблицы и столбцы, старый код работает);
+:vercel deploy --prod\nсборка на Vercel, новый деплой Ready;
+:Read-only проверка:\nGET /api/health, /api/health?deep=1,\nкаталог, вход demo;
+if (Проверка пройдена?) then (да)
+  :Деплой остаётся в production;
+  :Фаза contract отдельным коммитом:\nудаление устаревшего,\nтолько когда старый код не нужен;
+else (нет)
+  :Instant Rollback:\nоткат КОДА к предыдущему деплою;
+  note right
+    Данные и применённые
+    миграции не откатываются.
+    Поэтому expand совместима
+    со старым кодом.
+  end note
+endif
+stop
+
+@enduml

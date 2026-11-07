@@ -1,0 +1,47 @@
+@startuml pr5-request
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam sequenceMessageAlign left
+skinparam maxMessageSize 200
+skinparam dpi 100
+hide footbox
+autonumber
+
+title Авторизованный запрос POST /api/instances (запуск инстанса)
+
+actor "Браузер" as B
+participant "Vercel" as V
+participant "Express:\nконвейер и роут" as A
+participant "db.ts:\nwithUser" as W
+database "PostgreSQL" as DB
+
+B -> V : POST /api/instances, cookie __Host-sid,\nX-Requested-With: fetch, Origin
+V -> A : rewrite /api/(.*) -> функция
+A -> A : request-id, helmet, JSON до 32 КБ;\ncsrfGuard (иначе 403 CSRF)
+A -> DB : authenticate: fn_session_resolve(sha256(токен))
+DB --> A : пользователь, роль, статус (или пусто)
+A -> A : requireUser: нет сессии - 401,\nзаблокирован - 403 USER_BLOCKED
+A -> A : email подтверждён (иначе 403 EMAIL_NOT_VERIFIED);\nzod .strict() (иначе 400 VALIDATION_ERROR)
+
+A -> W : withUser({userId, role, ip}, fn)
+group одна транзакция на одном соединении
+  W -> DB : pool.connect(); BEGIN;\nset_config('app.user_id'), ('app.user_role'),\n('app.client_ip'), ('app.enc_key'), is_local = true
+  W -> DB : SELECT дата-центра и модели GPU по кодам
+  W -> DB : fn_start_instance(...): блокировка пользователя,\nшаблон и том, баланс >= часа, выбор GPU, снимок цены
+  W -> DB : fn_env_set(...) для каждой переменной
+  W -> DB : SELECT инстанса (владелец в WHERE и RLS по app.user_id)
+  alt GR001 / GR002 / иная ошибка БД
+    DB --> W : SQLSTATE
+    W -> DB : ROLLBACK; release()
+    W --> A : исключение (SQLSTATE)
+    A --> B : 409 NO_CAPACITY / 402 INSUFFICIENT_FUNDS\n(единый формат ошибки)
+  else успех
+    W -> DB : COMMIT; release()
+    W --> A : строка инстанса
+  end
+end
+A --> B : 201 Created {инстанс}, Cache-Control: private, no-store
+
+@enduml

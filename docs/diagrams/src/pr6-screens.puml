@@ -1,0 +1,63 @@
+@startuml pr6-screens
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 12
+skinparam nodesep 14
+skinparam ranksep 28
+skinparam dpi 100
+
+title Карта экранов GPU Rent: маршруты, роли и охранники
+
+package "Общая оболочка Layout: без входа" as PUB {
+  rectangle "/\nКаталог" as CAT
+  rectangle "Диалог\nзапуска" as LD
+  rectangle "/verify?token=\nПодтверждение" as VER
+  rectangle "*\nНе найдено" as NF
+}
+
+package "GuestOnly: только без сессии" as GST {
+  rectangle "/login\nВход" as LOGIN
+  rectangle "/register\nРегистрация" as REG
+}
+
+package "RequireAuth: нужна сессия, иначе /login" as AUTH {
+  rectangle "/instances\nИнстансы" as INST
+  rectangle "/instances/:id\nКарточка" as DET
+  rectangle "/volumes\nТома" as VOL
+  rectangle "/billing\nБаланс" as BILL
+  rectangle "/settings\nНастройки" as SET
+  rectangle "Аккаунт заблокирован\n(403 USER_BLOCKED)" as BLK
+}
+
+package "RequireAdmin: role = admin, иначе /" as ADM {
+  rectangle "/admin\nДашборд" as AD
+  rectangle "/admin/prices\nЦены" as AP
+  rectangle "/admin/infrastructure\nИнфраструктура" as AI
+  rectangle "/admin/users\nПользователи" as AU
+  rectangle "/admin/audit\nАудит" as AA
+}
+
+CAT -right-> LD : «Запустить»,\nесть сессия
+CAT -down-> LOGIN : «Запустить»,\nнет сессии
+LOGIN -down-> INST : успех:\nна from
+REG -down-> SET : демо-ссылка\nподтверждения
+INST -right-> DET
+DET -[hidden]right- VOL
+BILL -[hidden]right- SET
+SET -[hidden]right- BLK
+INST -[hidden]down- BILL
+BILL -[hidden]down- AP
+SET -[hidden]down- AI
+BLK -[hidden]down- AU
+AD -[hidden]right- AP
+AP -[hidden]right- AI
+AI -[hidden]right- AU
+AU -[hidden]right- AA
+LOGIN -[hidden]right- REG
+LD -[hidden]right- VER
+VER -[hidden]right- NF
+
+@enduml

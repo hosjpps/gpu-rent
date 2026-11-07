@@ -13,6 +13,10 @@
 | 2 | Анализ требований и планирование разработки монолитного веб-приложения | [reports/pr2.pdf](reports/pr2.pdf) | [pr2-trebovaniya-i-plan.md](docs/reports/pr2-trebovaniya-i-plan.md) |
 | 3 | Проектирование БД: концептуальная и логическая модель | [reports/pr3.pdf](reports/pr3.pdf) | [pr3-logicheskoe-proektirovanie-bd.md](docs/reports/pr3-logicheskoe-proektirovanie-bd.md) |
 | 4 | Проектирование БД: физическая реализация, оптимизация и безопасность | [reports/pr4.pdf](reports/pr4.pdf) | [pr4-fizicheskaya-realizaciya-bd.md](docs/reports/pr4-fizicheskaya-realizaciya-bd.md) |
+| 5 | Реализация серверной части: REST API, аутентификация, безопасность, кэширование, тесты | [reports/pr5.pdf](reports/pr5.pdf) | [pr5-realizaciya-servera.md](docs/reports/pr5-realizaciya-servera.md) |
+| 6 | Реализация клиентской части и интеграция с сервером | [reports/pr6.pdf](reports/pr6.pdf) | [pr6-realizaciya-klienta.md](docs/reports/pr6-realizaciya-klienta.md) |
+| 7 | Развёртывание: Vercel и Neon, окружение, CI/CD | [reports/pr7.pdf](reports/pr7.pdf) | [pr7-deploy.md](docs/reports/pr7-deploy.md) |
+| 8 | Безопасность, мониторинг и надёжность развёрнутой системы | [reports/pr8.pdf](reports/pr8.pdf) | [pr8-bezopasnost-i-nadezhnost.md](docs/reports/pr8-bezopasnost-i-nadezhnost.md) |
 
 ## Стек
 

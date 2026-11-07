@@ -1,0 +1,39 @@
+@startuml pr8-shared-responsibility
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam ArrowFontSize 12
+skinparam nodesep 20
+skinparam ranksep 14
+skinparam dpi 100
+hide stereotype
+skinparam rectangle {
+  BackgroundColor<<prov>> #DDDDDD
+  BackgroundColor<<own>> #FFFFFF
+  BorderThickness<<own>> 2
+}
+
+title Разделённая ответственность по пути запроса\nсерый фон — обеспечивает провайдер, белый с жирной рамкой — мы
+
+rectangle "Пользователь: браузер или клиент API (HTTPS)" as U
+
+rectangle "ПРОВАЙДЕР, Vercel: сеть и CDN\nTLS-сертификат, HTTP/2, DDoS-защита L3-L7, брандмауэр платформы, кэш" as L1 <<prov>>
+rectangle "МЫ: граница приложения\nCSP, HSTS, nosniff, CSRF, cookie __Host-sid, лимиты попыток входа и тела" as L2 <<own>>
+rectangle "ПРОВАЙДЕР, Vercel: среда выполнения функции\nизоляция, ОС и её патчи, Node.js 24.x, масштабирование" as L3 <<prov>>
+rectangle "МЫ: код и секреты\nzod, параметризованный SQL, npm audit, sensitive env, логи без секретов" as L4 <<own>>
+rectangle "ПРОВАЙДЕР, Neon: сеть БД\nтолько TLS-соединения, пулер PgBouncer" as L5 <<prov>>
+rectangle "МЫ: права внутри БД\nроль gpu_rent_web, RLS, SECURITY DEFINER, ограничения, аудит" as L6 <<own>>
+rectangle "ПРОВАЙДЕР, Neon: хранилище и платформа БД\nшифрование диска, обновления PostgreSQL, PITR (Free: 6 ч по документации)" as L7 <<prov>>
+rectangle "МЫ: копии и доступы к аккаунтам\nпроверяемый pg_dump; пароли и 2FA (2FA не проверена)" as L8 <<own>>
+
+U --> L1
+L1 --> L2
+L2 --> L3
+L3 --> L4
+L4 --> L5
+L5 --> L6
+L6 --> L7
+L7 --> L8
+
+@enduml
