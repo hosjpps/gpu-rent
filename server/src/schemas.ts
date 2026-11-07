@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { ZodTypeAny } from 'zod';
 import { badRequest, zodDetails } from './errors';
 
-/** Разбирает вход по схеме; при ошибке — 400 с перечнем полей. Лишние поля в теле отбрасываются (белый список). */
+/** Разбирает вход по схеме; при ошибке — 400 с перечнем полей. Схемы запросов строгие (.strict()): лишнее поле в теле — ошибка 400, исключение — тело вебхука платежей. */
 export function parse<S extends ZodTypeAny>(schema: S, data: unknown): z.infer<S> {
   const r = schema.safeParse(data);
   if (!r.success) throw badRequest('Некорректные данные запроса', 'VALIDATION_ERROR', zodDetails(r.error));

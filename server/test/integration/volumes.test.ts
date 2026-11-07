@@ -190,6 +190,22 @@ describe('ограничения на аккаунт', () => {
     expect((await u.api.post('/api/volumes', { name: 'again', datacenterCode: offer.dc, sizeGb: 10 })).status).toBe(201);
   });
 
+  it('параллельные extend и создание томов при работающем инстансе не дают deadlock (конфликт 409 CONFLICT)', async () => {
+    const u = await newUser(app, { balance: 5000 });
+    const v = await newVolume(u, { sizeGb: 20 });
+    const inst = await launch(u, offer);
+    for (let round = 0; round < 3; round++) {
+      await sql("UPDATE instances SET last_billed_at = now() - interval '30 minutes' WHERE id = $1", [inst.id]);
+      const rs = await Promise.all([
+        u.api.post(`/api/volumes/${v.id}/extend`, { sizeGb: 40 + round }),
+        u.api.post('/api/volumes', { name: `p${round}a`, datacenterCode: offer.dc, sizeGb: 10 }),
+        u.api.post('/api/volumes', { name: `p${round}b`, datacenterCode: offer.dc, sizeGb: 10 }),
+      ]);
+      expect(rs.map((r) => r.status), JSON.stringify(rs.map((r) => r.body))).toEqual([200, 201, 201]);
+      for (const x of rs.slice(1)) await u.api.delete(`/api/volumes/${x.body.id}`);
+    }
+  });
+
   it('суммарный размер активных томов — не более 5000 ГБ', async () => {
     const u = await newUser(app);
     await newVolume(u, { sizeGb: 4000 });

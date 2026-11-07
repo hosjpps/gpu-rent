@@ -116,10 +116,12 @@ export function volumeRoutes(config: Config): Router {
       const b = parse(extendVolumeBody, req.body);
       try {
         const row = await withUser(userCtx(req), async (c) => {
+          // Тот же лимит, что при создании: иначе том можно создать маленьким, а потом «растянуть» мимо потолка.
+          // Берётся до fn_bill_current_user (она блокирует строку пользователя): порядок «advisory, потом строка»
+          // должен совпадать с POST /volumes, иначе параллельные запросы дают deadlock.
+          await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`volumes:${userId}`]);
           // Сначала начисляем хранение по старому размеру: иначе новый размер задним числом лёг бы на весь непроведённый интервал.
           await c.query('SELECT * FROM fn_bill_current_user()');
-          // Тот же лимит, что при создании: иначе том можно создать маленьким, а потом «растянуть» мимо потолка.
-          await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`volumes:${userId}`]);
           const own = await c.query<{ id: number }>("SELECT id FROM volumes WHERE id = $1 AND user_id = $2 AND status = 'active'", [id, userId]);
           if (!own.rows[0]) throw notFound('Том не найден');
           const others = await c.query<{ gb: number }>(

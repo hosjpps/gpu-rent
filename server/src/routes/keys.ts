@@ -17,13 +17,20 @@ const templateBody = z
   .object({
     name: z.string().trim().min(1).max(64),
     // «репозиторий/образ:тег» без пробелов и схемы; полную проверку формата делает реестр при запуске
-    dockerImage: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._\-/:@]*$/, 'Неверный формат имени образа'),
+    dockerImage: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._\-/:@]*$/, 'Неверный формат имени образа')
+      .refine((s) => !s.includes('://'), 'Имя образа без схемы (http://)'),
     defaultDiskGb: z.number().int().min(10).max(2000),
     defaultPorts: z
       .string()
       .trim()
       .max(100)
       .regex(/^$|^\d{1,5}\/(tcp|http)(,\d{1,5}\/(tcp|http))*$/, 'Порты в формате 22/tcp,8888/http')
+      .refine((s) => s.split(',').every((p) => p === '' || (Number(p.split('/')[0]) >= 1 && Number(p.split('/')[0]) <= 65535)), 'Порт от 1 до 65535')
       .default(''),
   })
   .strict();
@@ -120,6 +127,8 @@ export function keyRoutes(config: Config): Router {
         ]);
       }
       const created = await withUser(userCtx(req), async (c) => {
+        // Блокировка на пользователя: параллельные запросы не должны вместе перешагнуть лимит.
+        await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`ssh_keys:${req.user!.id}`]);
         const n = await c.query<{ n: number }>('SELECT count(*)::int AS n FROM ssh_keys WHERE user_id = $1', [req.user!.id]);
         if ((n.rows[0]?.n ?? 0) >= MAX_SSH_KEYS) throw conflict(`Можно хранить не более ${MAX_SSH_KEYS} SSH-ключей`, 'LIMIT_REACHED');
         try {
@@ -170,6 +179,7 @@ export function keyRoutes(config: Config): Router {
       const body = parse(apiKeyBody, req.body);
       const { key, prefix, hash } = generateApiKey();
       const created = await withUser(userCtx(req), async (c) => {
+        await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`api_keys:${req.user!.id}`]);
         const n = await c.query<{ n: number }>(
           'SELECT count(*)::int AS n FROM api_keys WHERE user_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())',
           [req.user!.id],
@@ -234,6 +244,7 @@ export function keyRoutes(config: Config): Router {
     wrap(async (req, res) => {
       const body = parse(templateBody, req.body);
       const created = await withUser(userCtx(req), async (c) => {
+        await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`templates:${req.user!.id}`]);
         const n = await c.query<{ n: number }>('SELECT count(*)::int AS n FROM templates WHERE owner_id = $1', [req.user!.id]);
         if ((n.rows[0]?.n ?? 0) >= MAX_TEMPLATES) throw conflict(`Можно создать не более ${MAX_TEMPLATES} личных шаблонов`, 'LIMIT_REACHED');
         // Владелец и признак публичности задаёт сервер, из тела они не читаются.

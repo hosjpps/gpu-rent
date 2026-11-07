@@ -12,7 +12,7 @@ import { formatDateTime } from '../lib/format';
 import { validateName } from '../lib/validation';
 
 const MIN_GB = 10;
-const MAX_GB = 10000;
+const MAX_GB = 5000;
 
 function validateSize(raw: string, min = MIN_GB): string | null {
   const n = Number(raw);
@@ -152,7 +152,7 @@ function CreateVolumeDialog({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </Field>
-        <Field label={`Размер, ГБ (${MIN_GB}–${MAX_GB})`} error={errors.size}>
+        <Field label={`Размер, ГБ (${MIN_GB}–${MAX_GB})`} error={errors.size} hint={`Суммарно на аккаунт — не больше ${MAX_GB} ГБ`}>
           <input type="number" name="sizeGb" min={MIN_GB} max={MAX_GB} value={size} onChange={(e) => setSize(e.target.value)} />
         </Field>
         <ErrorNote error={create.error} />
@@ -195,7 +195,7 @@ function ExtendVolumeDialog({ volume, onClose }: { volume: Volume; onClose: () =
     <Dialog title={`Расширить «${volume.name}»`} onClose={onClose}>
       <form className="stack" onSubmit={submit} noValidate>
         <p className="muted">Сейчас {volume.sizeGb} ГБ. Уменьшить том нельзя.</p>
-        <Field label="Новый размер, ГБ" error={error}>
+        <Field label="Новый размер, ГБ" error={error} hint={`Суммарно на аккаунт — не больше ${MAX_GB} ГБ`}>
           <input type="number" name="sizeGb" value={size} onChange={(e) => setSize(e.target.value)} />
         </Field>
         <ErrorNote error={extend.error} />

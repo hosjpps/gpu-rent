@@ -22,7 +22,7 @@ const notificationBody = z.object({
   paymentId: z.string().min(1).max(100),
   status: z.enum(['succeeded', 'failed']),
   amount: decimalSchema(2, 0.01, 999_999_999),
-});
+}); // не .strict(): шлюз вправе слать лишние поля, они игнорируются (тест «userId в теле игнорируется»)
 
 interface PaymentRow {
   id: number;

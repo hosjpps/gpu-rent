@@ -110,6 +110,7 @@ export function billingRoutes(config: Config): Router {
       const q = parse(spendQuery, req.query);
       const to = q.to ?? todayMoscow();
       const from = q.from ?? addDays(to, -29);
+      if (!isRealMoment(from)) throw badRequest('Период выходит за допустимые даты', 'VALIDATION_ERROR');
       const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS + 1;
       if (days < 1) throw badRequest('Дата «from» не может быть позже «to»', 'VALIDATION_ERROR');
       if (days > MAX_SPEND_DAYS) throw badRequest(`Период не больше ${MAX_SPEND_DAYS} дней`, 'VALIDATION_ERROR');

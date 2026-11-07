@@ -88,6 +88,13 @@ describe('SSH-ключи', () => {
     expect(res.body.error.code).toBe('LIMIT_REACHED');
   });
 
+  it('параллельные запросы не перешагивают лимит 20 SSH-ключей', async () => {
+    const u = await newUser(app);
+    const rs = await Promise.all(Array.from({ length: 30 }, (_, i) => u.api.post('/api/ssh-keys', { name: `p${i}`, publicKey: makeSshKey().publicKey })));
+    expect(rs.filter((r) => r.status === 201)).toHaveLength(20);
+    expect(rs.filter((r) => r.status === 409 && r.body.error.code === 'LIMIT_REACHED')).toHaveLength(10);
+  });
+
   it('без входа — 401', async () => {
     expect((await new Api(app).get('/api/ssh-keys')).status).toBe(401);
   });
@@ -224,6 +231,13 @@ describe('API-ключи', () => {
     expect((await u.api.post('/api/api-keys', { name: 'k11' })).status).toBe(201);
   });
 
+  it('параллельные запросы не перешагивают лимит 10 API-ключей', async () => {
+    const u = await newUser(app);
+    const rs = await Promise.all(Array.from({ length: 25 }, (_, i) => u.api.post('/api/api-keys', { name: `p${i}` })));
+    expect(rs.filter((r) => r.status === 201)).toHaveLength(10);
+    expect(rs.filter((r) => r.status === 409 && r.body.error.code === 'LIMIT_REACHED')).toHaveLength(15);
+  });
+
   it('чужой ключ отозвать нельзя (404); лишние поля при создании — 400', async () => {
     const a = await newUser(app);
     const b = await newUser(app);
@@ -267,6 +281,10 @@ describe('личные шаблоны', () => {
     expect(res.status).toBe(400);
   });
 
+  it.each([['defaultPorts', '99999/tcp'], ['defaultPorts', '0/tcp'], ['defaultPorts', '22/tcp,70000/http'], ['dockerImage', 'http://x']])('неверное значение %s=%s — 400', async (field, value) => {
+    expect((await user.api.post('/api/templates', body({ [field]: value }))).status).toBe(400);
+  });
+
   it('запуск со своим шаблоном работает, с чужим — 404; шаблон, на который ссылается инстанс, не удаляется (409)', async () => {
     const owner = await newUser(app, { balance: 5000 });
     const thief = await newUser(app, { balance: 5000 });
@@ -302,6 +320,13 @@ describe('личные шаблоны', () => {
     const res = await u.api.post('/api/templates', body());
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('LIMIT_REACHED');
+  });
+
+  it('параллельные запросы не перешагивают лимит 20 шаблонов', async () => {
+    const u = await newUser(app);
+    const rs = await Promise.all(Array.from({ length: 30 }, () => u.api.post('/api/templates', body())));
+    expect(rs.filter((r) => r.status === 201)).toHaveLength(20);
+    expect(rs.filter((r) => r.status === 409 && r.body.error.code === 'LIMIT_REACHED')).toHaveLength(10);
   });
 });
 

@@ -122,6 +122,7 @@ export function adminRoutes(config: Config): Router {
     wrap(async (req, res) => {
       const q = parse(dashboardQuery, req.query);
       const to = q.to ?? todayMoscow();
+      if (!isRealDate(to)) throw badRequest('Такой даты нет в календаре', 'INVALID_PERIOD'); // до shiftDays: на несуществующей дате он бросает RangeError
       const from = q.from ?? shiftDays(to, -29);
       if (!isRealDate(from) || !isRealDate(to)) throw badRequest('Такой даты нет в календаре', 'INVALID_PERIOD');
       if (from > to) throw badRequest('Начало периода позже конца', 'INVALID_PERIOD');

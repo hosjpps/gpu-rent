@@ -259,6 +259,7 @@ describe('расходы /billing/spend', () => {
     expect((await u.api.get('/api/billing/spend?from=2025-05-02&to=2025-05-01')).status).toBe(400);
     expect((await u.api.get('/api/billing/spend?from=2025-02-31&to=2025-03-01')).status).toBe(400);
     expect((await u.api.get('/api/billing/spend?from=0000-01-01&to=0000-01-02')).status).toBe(400); // года 0000 в PostgreSQL нет
+    expect((await u.api.get('/api/billing/spend?to=0001-01-10')).status).toBe(400); // from по умолчанию ушёл бы в год 0000
     expect((await u.api.get('/api/billing/spend?from=abc')).status).toBe(400);
     expect((await u.api.get('/api/billing/spend?from=2025-01-01&from=2025-01-02')).status).toBe(400);
   });
