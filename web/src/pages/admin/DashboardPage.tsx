@@ -39,7 +39,7 @@ export default function DashboardPage() {
           <span className="stat-icon" aria-hidden="true">
             <IconChart />
           </span>
-          <span className="stat-label">Выручка за период</span>
+          <span className="stat-label">Выручка от GPU за период</span>
           <span className="stat-value mono" data-testid="revenue-total">
             {formatMoney(totalRevenue)}
           </span>
@@ -64,8 +64,8 @@ export default function DashboardPage() {
       </div>
 
       <section className="card section">
-        <h2>Выручка по дням</h2>
-        <BarChart data={days} format={formatMoney} ariaLabel="Выручка по дням" valueTitle="Выручка" />
+        <h2>Выручка от GPU по дням</h2>
+        <BarChart data={days} format={formatMoney} ariaLabel="Выручка от GPU по дням" valueTitle="Выручка" />
       </section>
 
       <div className="grid-2">
@@ -98,7 +98,7 @@ export default function DashboardPage() {
           </ul>
         </section>
       </div>
-      <p className="muted small">Данные витрины обновляются при проходе биллинга, поэтому могут отставать на несколько минут.</p>
+      <p className="muted small">Данные витрины обновляются при проходе биллинга и могут отставать до 30 минут, а если биллинг по расписанию не настроен — до суток. Хранение томов в выручку не входит.</p>
     </>
   );
 }

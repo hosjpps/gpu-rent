@@ -8,10 +8,15 @@ export function pricePerGpu(offer: Pick<GpuOffer, 'priceOnDemand' | 'priceSpot'>
   return raw === null ? null : toNumber(raw);
 }
 
-/** Стоимость часа работы инстанса: цена одной GPU * число GPU, округление до копеек вверх (с запасом) */
+/**
+ * Стоимость часа работы инстанса: цена одной GPU * число GPU, округление до копеек вверх (с запасом).
+ * Считаем в целых десятитысячных рубля (как numeric(…, 4) в БД): умножение float на 100 даёт шум
+ * IEEE-754 (74.93 * 100 = 7493.000000000001) и лишнюю копейку.
+ */
 export function hourlyCost(priceOfOneGpu: number | null, gpuCount: number): number | null {
   if (priceOfOneGpu === null) return null;
-  return Math.ceil(priceOfOneGpu * gpuCount * 100) / 100;
+  const units = Math.round(priceOfOneGpu * 10000) * gpuCount;
+  return Math.ceil(units / 100) / 100;
 }
 
 export const HOURS_IN_DAY = 24;

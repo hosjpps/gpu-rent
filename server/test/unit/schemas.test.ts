@@ -85,6 +85,14 @@ describe('регистрация и вход', () => {
     expect(ok(registerBody, { ...validRegister, email })).toBe(false);
   });
 
+  it('длинный email с множеством точек разбирается быстро (нет ReDoS)', () => {
+    for (const email of [`a@${'.'.repeat(30000)}@`, `a@${'.'.repeat(250)}@`, `${'a'.repeat(30000)}@b.c`]) {
+      const t = performance.now();
+      expect(ok(registerBody, { ...validRegister, email })).toBe(false);
+      expect(performance.now() - t).toBeLessThan(50);
+    }
+  });
+
   it('слишком длинный email отвергается', () => {
     expect(ok(registerBody, { ...validRegister, email: `${'a'.repeat(250)}@x.io` })).toBe(false);
   });

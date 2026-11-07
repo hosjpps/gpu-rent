@@ -37,7 +37,7 @@ interface DbErrorInfo {
  */
 const DB_ERRORS: Record<string, DbErrorInfo> = {
   GR001: { status: 409, code: 'NO_CAPACITY', message: 'Нет свободных GPU выбранной модели в этом дата-центре' },
-  GR002: { status: 402, code: 'INSUFFICIENT_FUNDS', message: 'Недостаточно средств: на балансе должна быть сумма не меньше стоимости одного часа' },
+  GR002: { status: 402, code: 'INSUFFICIENT_FUNDS', message: 'Недостаточно средств: на балансе должна быть сумма не меньше стоимости часа нового инстанса и всех уже работающих' },
   GR003: { status: 409, code: 'INVALID_STATE', message: 'Операция недопустима в текущем состоянии объекта' },
   GR004: { status: 404, code: 'NOT_FOUND', message: 'Объект не найден' },
   GR005: { status: 422, code: 'CONSISTENCY', message: 'Данные запроса не согласованы между собой' },

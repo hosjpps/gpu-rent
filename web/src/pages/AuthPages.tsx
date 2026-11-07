@@ -110,7 +110,7 @@ export function RegisterPage() {
   function submit(e: FormEvent) {
     e.preventDefault();
     const next = {
-      fullName: validateName(fullName, 'Имя'),
+      fullName: validateName(fullName, 'Имя', 2),
       email: validateEmail(email),
       password: validatePassword(password),
       repeat: password !== repeat ? 'Пароли не совпадают' : null,

@@ -155,7 +155,7 @@ DO $$
 DECLARE
     u1 bigint := pg_temp.fx('u1'); u2 bigint := pg_temp.fx('u2'); u3 bigint := pg_temp.fx('u3');
     dc1 bigint := pg_temp.fx('dc1'); dc2 bigint := pg_temp.fx('dc2'); ma bigint := pg_temp.fx('ma');
-    v_tpl_private bigint; v_id uuid;
+    v_tpl_private bigint; v_id uuid; v_id2 uuid; v_bal numeric;
 BEGIN
     -- баланс
     PERFORM pg_temp.as_user(u3);
@@ -168,6 +168,19 @@ BEGIN
     PERFORM pg_temp.assert_true(v_id IS NOT NULL, 'balance exactly equal to the hour price is enough');
     PERFORM fn_terminate_instance(v_id);
     INSERT INTO transactions (user_id, type, amount, description) VALUES (u1, 'bonus', 9900, 'restore');
+
+    -- баланс должен покрывать час и уже работающих инстансов (0014): 150 RUB хватает на один запуск по 100, не на второй
+    v_bal := (SELECT balance FROM users WHERE id = u1);
+    INSERT INTO transactions (user_id, type, amount, description) VALUES (u1, 'adjustment', 150 - v_bal, 'leave 150 RUB');
+    v_id := fn_start_instance(u1, dc1, ma, 1, 'on_demand', pg_temp.fx('tpl'), 'first');
+    PERFORM pg_temp.assert_raises(pg_temp.q_start(u1, dc1, 1), 'GR002', 'second start is refused: balance 150 < 100 (running) + 100 (new)');
+    PERFORM fn_stop_instance(v_id);
+    v_id2 := fn_start_instance(u1, dc1, ma, 1, 'on_demand', pg_temp.fx('tpl'), 'second');
+    PERFORM pg_temp.assert_raises(format('SELECT fn_resume_instance(%L)', v_id), 'GR002', 'resume is refused while another instance runs: 150 < 100 + 100');
+    PERFORM fn_terminate_instance(v_id2);
+    PERFORM fn_terminate_instance(v_id);
+    INSERT INTO transactions (user_id, type, amount, description)
+    VALUES (u1, 'bonus', v_bal - (SELECT balance FROM users WHERE id = u1), 'restore');
 
     -- статус пользователя
     UPDATE users SET status = 'blocked' WHERE id = u1;

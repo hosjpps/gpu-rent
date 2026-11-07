@@ -54,7 +54,7 @@ Workflows в `.github/workflows`; значения задаются в Settings,
 |---|---|---|
 | `vars.APP_URL` | Variables | адрес сайта без слэша; нужен `billing-cron.yml` и `uptime.yml`, без него они пропускают шаг |
 | `secrets.CRON_SECRET` | Secrets | то же значение, что `CRON_SECRET` на Vercel; `billing-cron.yml` каждые 30 минут вызывает `POST /api/internal/billing` |
-| `secrets.DATABASE_URL_DIRECT` | Secrets | direct-адрес Neon (не пулер) для `db-backup.yml`; роль с правом чтения всех таблиц. Без него копия не делается |
+| `secrets.DATABASE_URL_DIRECT` | Secrets | direct-адрес Neon (не пулер) для `db-backup.yml`; direct-строка владельца проекта (как для миграций) или роль с BYPASSRLS; роль только с `pg_read_all_data` не годится: на таблицах включён RLS, и `pg_dump` падает. Без него копия не делается |
 | `secrets.BACKUP_PASSPHRASE` | Secrets | парольная фраза шифрования дампа; репозиторий публичный, без неё дамп проверяется, но в артефакт не загружается |
 
 Логи Actions публичного репозитория видны всем, поэтому workflows не печатают суммы списаний и секреты.

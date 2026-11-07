@@ -12,13 +12,14 @@ export function parse<S extends ZodTypeAny>(schema: S, data: unknown): z.infer<S
 
 const byteLength = (s: string) => Buffer.byteLength(s, 'utf8');
 
+// Длина проверяется в первом звене pipe: при её провале regex во втором звене не запускается (zod 3 иначе гонял бы regex по всей строке до лимита тела).
+// Классы без пересечения (точка не входит в домен-часть) — разбор линейный, без квадратичного перебора точек.
 export const emailSchema = z
   .string()
   .trim()
-  .toLowerCase()
   .min(3, 'Слишком короткий email')
   .max(254, 'Слишком длинный email')
-  .regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/, 'Неверный формат email');
+  .pipe(z.string().toLowerCase().regex(/^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$/, 'Неверный формат email'));
 
 // bcrypt учитывает только первые 72 байта пароля: более длинные пароли отвергаем, а не обрезаем молча.
 export const passwordSchema = z

@@ -17,9 +17,10 @@ export function validatePassword(password: string): string | null {
   return null;
 }
 
-export function validateName(name: string, what = 'Название'): string | null {
+export function validateName(name: string, what = 'Название', minLength = 1): string | null {
   const v = name.trim();
   if (!v) return `${what}: введите значение`;
+  if (v.length < minLength) return `${what}: не короче ${minLength} символов`;
   if (v.length > 64) return `${what}: не длиннее 64 символов`;
   return null;
 }

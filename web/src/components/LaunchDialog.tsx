@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ApiError } from '../api/client';
-import { useBalance, useLaunchInstance, useMe, useMyTemplates, useSshKeys, useTemplates, useVolumes } from '../api/hooks';
+import { useBalance, useInstances, useLaunchInstance, useMe, useMyTemplates, useSshKeys, useTemplates, useVolumes } from '../api/hooks';
 import type { GpuOffer, LaunchRequest, PricingType } from '../api/types';
 import { HOURS_IN_DAY, HOURS_IN_MONTH, hourlyCost, pricePerGpu } from '../lib/cost';
 import { formatMoney, toNumber } from '../lib/format';
@@ -43,6 +43,7 @@ export function LaunchDialog({
   const volumes = useVolumes();
   const sshKeys = useSshKeys();
   const launch = useLaunchInstance();
+  const instances = useInstances();
 
   const allTemplates = useMemo(
     () => [...(templates.data ?? []), ...(myTemplates.data ?? [])],
@@ -80,7 +81,11 @@ export function LaunchDialog({
 
   const perGpu = offer ? pricePerGpu(offer, pricing) : null;
   const hour = hourlyCost(perGpu, count);
-  const missing = hour !== null ? hour - toNumber(balance) : 0;
+  // Правило сервера (миграция 0014): баланс покрывает час нового инстанса плюс час всех работающих
+  const runningHour = (instances.data ?? [])
+    .filter((i) => i.status === 'running')
+    .reduce((sum, i) => sum + toNumber(i.pricePerHour), 0);
+  const missing = hour !== null ? hour + runningHour - toNumber(balance) : 0;
 
   function changeDc(code: string) {
     setDc(code);
@@ -314,7 +319,8 @@ export function LaunchDialog({
             </div>
           )}
           <div className="muted small">
-            Баланс: {formatMoney(balance)}. Для запуска нужен баланс не меньше стоимости одного часа.
+            Баланс: {formatMoney(balance)}. Для запуска баланс должен покрывать час нового инстанса и час уже работающих
+            {runningHour > 0 ? ` (сейчас ${formatMoney(runningHour)} в час)` : ''}.
           </div>
           {hour !== null && missing > 0 && (
             <div className="alert alert-warn" role="status">

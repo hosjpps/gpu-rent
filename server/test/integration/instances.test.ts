@@ -134,10 +134,28 @@ describe('запуск инстанса', () => {
     expect((await short.api.post('/api/instances', launchBody(offer))).status).toBe(402);
   });
 
+  it('граница баланса при работающем инстансе: нужен час нового плюс час работающих (0014)', async () => {
+    const cost = Number(hourlyCost(offer.priceOnDemand, 1));
+    const need = cost * 2;
+    const enough = await newUser(app);
+    await topUp(enough.api, (Math.ceil(need * 100) / 100).toFixed(2));
+    await launch(enough, offer);
+    expect((await enough.api.post('/api/instances', launchBody(offer))).status).toBe(201);
+    await terminateAllInstances(enough);
+
+    const short = await newUser(app);
+    await topUp(short.api, (need - 0.01).toFixed(2));
+    await launch(short, offer);
+    const res = await short.api.post('/api/instances', launchBody(offer));
+    expect(res.status).toBe(402);
+    expect(res.body.error.code).toBe('INSUFFICIENT_FUNDS');
+    await terminateAllInstances(short);
+  });
+
   it('запуск и возобновление начисляют за работающие инстансы до проверки баланса', async () => {
     const cost = Number(hourlyCost(offer.priceOnDemand, 1));
     const u = await newUser(app);
-    await topUp(u.api, Math.ceil(cost * 1.5));
+    await topUp(u.api, Math.ceil(cost * 2.5));
     const first = await launch(u, offer);
     const stopped = await launch(u, offer);
     expect((await u.api.post(`/api/instances/${stopped.id}/stop`)).status).toBe(200);
