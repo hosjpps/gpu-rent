@@ -1,0 +1,41 @@
+@startuml pr19-contract
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 14
+skinparam roundcorner 6
+skinparam ArrowFontSize 13
+skinparam nodesep 25
+skinparam ranksep 40
+skinparam componentStyle uml2
+skinparam dpi 100
+
+title Как согласованы документация, код и клиент API
+
+component "server/openapi.yaml\nOpenAPI 3.1: 45 путей, 51 операция,\n38 схем, 5 общих параметров, 10 общих ответов" as SPEC
+component "routes/*.ts\nexpress-роутеры\n+ zod-схемы входа (schemas.ts)" as CODE
+component "errors.ts\nединый формат ошибки,\nSQLSTATE -> HTTP" as ERR
+component "web/src/api/types.ts\nTypeScript-типы клиента" as TYPES
+
+component "GET /api/openapi.yaml\nтот же файл" as SERVE
+component "GET /api/docs\nSwagger UI 5.17.14" as UI
+actor "Разработчик\nклиента" as DEV
+
+component "unit/openapi.test.ts\n10 проверок" as T1
+component "integration/contract.test.ts\nответы под ролью gpu_rent_web" as T2
+component "integration/*.test.ts\nsupertest: коды, формат ошибок,\nправа, граничные значения" as T3
+
+SPEC --> SERVE
+SERVE --> UI
+UI --> DEV : читает, пробует запросы
+CODE --> ERR : исключение
+
+T1 ..> SPEC : структура, $ref,\noperationId, security
+T1 ..> CODE : маршруты приложения\nи операции документа совпадают
+T2 ..> TYPES : обязательные поля\nи типы значений
+T2 ..> CODE : настоящие ответы
+T3 ..> CODE : HTTP-запросы
+note bottom of SPEC
+  Формы тел ответов с описанием
+  автоматически не сверяются
+end note
+@enduml

@@ -1,0 +1,45 @@
+@startuml pr21-launch-seq
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam sequenceMessageAlign left
+skinparam maxMessageSize 220
+skinparam dpi 100
+hide footbox
+autonumber
+
+title Запуск инстанса: от формы до обновлённого списка
+
+actor "Пользователь" as U
+participant "LaunchDialog" as D
+participant "useLaunchInstance\n(useMutation)" as M
+participant "client.ts:\nrequest()" as C
+participant "API" as S
+participant "Кэш TanStack Query\n+ useInstances" as Q
+
+U -> D : нажимает «Запустить»
+D -> D : validateName, число GPU, диск, имена env\n(ошибки под полями, запроса нет)
+D -> M : mutate(LaunchRequest)
+M -> C : POST /instances
+C -> S : fetch, X-Requested-With: fetch,\ncredentials: include
+alt 201 Created
+  S --> C : инстанс (в демо сразу status: running)
+  C --> M : данные
+  M -> Q : invalidateQueries:\ninstances, catalog, volumes,\nbalance, transactions, me
+  Q -> S : GET /instances (параллельно с остальными)
+  loop опрос списка: раз в 15 с (раз в 3 с, пока есть pending)
+    Q -> S : GET /instances
+    S --> Q : список со статусами
+  end
+  Q --> U : список, баланс и наличие GPU обновлены
+else 402 / 409 / 400
+  S --> C : {error:{code, message, details}}
+  C --> M : throw ApiError(status, code, message, details)
+  M --> D : launch.error
+  D --> U : ErrorNote: текст сервера\n(402 - ссылка «Пополнить баланс»)
+else сеть недоступна
+  C --> M : ApiError(0, NETWORK)
+  M --> D : «Нет связи с сервером»
+end
+@enduml

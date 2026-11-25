@@ -1,0 +1,39 @@
+@startuml pr23-cdn-flow
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam sequenceMessageAlign left
+skinparam maxMessageSize 200
+skinparam dpi 100
+hide footbox
+
+title Жизненный цикл ответа GET /api/catalog/gpus в CDN Vercel (s-maxage=30, stale-while-revalidate=60)
+
+actor "Браузер" as B
+participant "CDN Vercel" as C
+participant "Функция api/index\n(Express, fra1)" as F
+database "Neon" as DB
+
+== Возраст записи 0 с: в кэше пусто (MISS) ==
+B -> C : GET /api/catalog/gpus
+C -> F : запрос передаётся функции (при простое - холодный старт)
+F -> DB : SELECT из v_gpu_availability (при простое Neon просыпается)
+DB --> F : 18 строк
+F --> C : 200, Cache-Control: public, s-maxage=30, stale-while-revalidate=60
+C --> B : 200, x-vercel-cache: MISS, age: 0
+
+== Возраст 1-30 с: свежий ответ (HIT) ==
+B -> C : GET /api/catalog/gpus
+C --> B : 200, x-vercel-cache: HIT, age: N\n(функция и БД не вызываются)
+
+== Возраст 31-90 с: устаревший ответ (STALE) ==
+B -> C : GET /api/catalog/gpus
+C --> B : 200 из кэша, x-vercel-cache: STALE
+C ->> F : фоновое обновление записи
+F -> DB : SELECT
+F --> C : новый ответ, возраст сбрасывается
+
+== Возраст больше 90 с ==
+note over C : запись непригодна, следующий запрос снова идёт как MISS
+@enduml

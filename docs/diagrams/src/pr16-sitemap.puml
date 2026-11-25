@@ -1,0 +1,29 @@
+@startwbs pr16-sitemap
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam dpi 100
+
+* GPU Rent\nединая боковая навигация
+** Гость (без входа)
+*** / Каталог
+****_ вкладка «GPU по дата-центрам»:\nфильтры, наличие, цены, «Запустить»
+****_ вкладка «Шаблоны»:\nобраз, диск, порты
+*** /login Вход
+*** /register Регистрация
+*** /verify Подтверждение email
+** Клиент (после входа)
+*** /instances Инстансы
+****_ /instances/:id карточка:\nконфигурация, стоимость\nи время, остановка,\nудаление
+*** /volumes Тома
+*** /billing Баланс
+****_ пополнение, расходы,\nистория операций
+*** /settings Настройки
+****_ email, SSH-ключи,\nAPI-ключи, пароль
+** Администратор\n(группа «Управление»)
+*** /admin Дашборд
+*** /admin/prices Цены
+*** /admin/infrastructure Инфраструктура
+*** /admin/users Пользователи
+*** /admin/audit Аудит
+@endwbs

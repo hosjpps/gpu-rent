@@ -17,6 +17,15 @@
 | 6 | Реализация клиентской части и интеграция с сервером | [reports/pr6.pdf](reports/pr6.pdf) | [pr6-realizaciya-klienta.md](docs/reports/pr6-realizaciya-klienta.md) |
 | 7 | Развёртывание: Vercel и Neon, окружение, CI/CD | [reports/pr7.pdf](reports/pr7.pdf) | [pr7-deploy.md](docs/reports/pr7-deploy.md) |
 | 8 | Безопасность, мониторинг и надёжность развёрнутой системы | [reports/pr8.pdf](reports/pr8.pdf) | [pr8-bezopasnost-i-nadezhnost.md](docs/reports/pr8-bezopasnost-i-nadezhnost.md) |
+| 16 | Проектирование пользовательского интерфейса и опыта взаимодействия (UI/UX) веб-приложения GPU Rent | [reports/pr16.pdf](reports/pr16.pdf) | [pr16-ui-ux.md](docs/reports/pr16-ui-ux.md) |
+| 17 | Разработка схемы и структуры базы данных веб-приложения: требования, схема, SQL-скрипты, запросы и тестирование | [reports/pr17.pdf](reports/pr17.pdf) | [pr17-baza-dannyh.md](docs/reports/pr17-baza-dannyh.md) |
+| 18 | Серверная логика и бизнес-правила GPU Rent: каталог правил, программирование, безопасность, тестирование и отладка | [reports/pr18.pdf](reports/pr18.pdf) | [pr18-servernaya-logika.md](docs/reports/pr18-servernaya-logika.md) |
+| 19 | Создание и документирование REST API веб-приложения: эндпоинты, реализация, спецификация OpenAPI, тестирование | [reports/pr19.pdf](reports/pr19.pdf) | [pr19-api.md](docs/reports/pr19-api.md) |
+| 20 | Разработка механизма аутентификации и авторизации веб-приложения GPU Rent | [reports/pr20.pdf](reports/pr20.pdf) | [pr20-autentifikaciya.md](docs/reports/pr20-autentifikaciya.md) |
+| 21 | Интеграция фронтенда GPU Rent с серверным API: запросы и обработка ответов, управление состоянием, согласование проверок и тестирование | [reports/pr21.pdf](reports/pr21.pdf) | [pr21-integraciya.md](docs/reports/pr21-integraciya.md) |
+| 22 | Обеспечение безопасности веб-приложения и защита данных, хранящихся и передаваемых в сервисе GPU Rent | [reports/pr22.pdf](reports/pr22.pdf) | [pr22-bezopasnost.md](docs/reports/pr22-bezopasnost.md) |
+| 23 | Кэширование и оптимизация производительности веб-приложения: замеры, кэш CDN и браузера, оптимизация SQL и объёма передаваемых данных | [reports/pr23.pdf](reports/pr23.pdf) | [pr23-keshirovanie.md](docs/reports/pr23-keshirovanie.md) |
+| 24 | Паттерны проектирования и лучшие практики разработки в веб-приложении GPU Rent | [reports/pr24.pdf](reports/pr24.pdf) | [pr24-patterny.md](docs/reports/pr24-patterny.md) |
 
 ## Стек
 

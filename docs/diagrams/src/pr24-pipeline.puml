@@ -1,0 +1,44 @@
+@startuml pr24-pipeline
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam ArrowFontSize 12
+skinparam sequenceMessageAlign center
+skinparam dpi 100
+
+title Запрос POST /api/instances: цепочка обработчиков и единица работы withUser
+
+participant "Браузер" as B
+participant "Middleware\n(цепочка)" as M
+participant "Обработчик\nroutes/instances.ts" as H
+participant "withUser\n(Unit of Work)" as W
+database "PostgreSQL" as PG
+participant "onError" as E
+
+B -> M : POST + cookie + X-Requested-With
+M -> M : request-id, helmet, json(32 КБ)
+M -> M : csrfGuard: заголовок и Origin
+M -> M : authenticate: Bearer или cookie\nrequireUser
+alt звено отказало
+  M -> E : next(AppError 401/403)
+  E --> B : {"error":{code,message}}
+else все звенья пропустили
+  M -> H : next()
+  H -> H : parse(createInstanceBody)
+  H -> W : withUser(userCtx(req), fn)
+  W -> PG : BEGIN; set_config(app.user_id, ...)
+  W -> H : fn(client)
+  H -> PG : fn_bill_current_user; fn_start_instance
+  alt исключение в fn
+    W -> PG : ROLLBACK
+    W --> E : throw (toAppError: SQLSTATE -> HTTP)
+    E --> B : 402 / 409 / 422 ...
+  else успех
+    W -> PG : COMMIT
+    W --> H : результат
+    H --> B : 201 + toInstance(row)
+  end
+  note over W : finally: removeListener, client.release(broken)
+end
+@enduml

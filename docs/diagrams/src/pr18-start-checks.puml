@@ -1,0 +1,33 @@
+@startuml pr18-start-checks
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam dpi 100
+skinparam maxMessageSize 220
+
+title Порядок проверок при запуске инстанса (POST /api/instances)
+
+start
+partition "Express: маршрут и middleware" {
+  :authenticate, requireUser\nнет входа - 401; заблокирован - 403 USER_BLOCKED;
+  :email не подтверждён\n403 EMAIL_NOT_VERIFIED;
+  :zod .strict(): формат, границы\n400 VALIDATION_ERROR;
+}
+partition "withUser: одна транзакция" {
+  :дата-центр, модель GPU, свой SSH-ключ\nне найдены - 404;
+  :fn_bill_current_user: начисление за работающие\nинстансы, автостоп при балансе <= 0;
+  partition "fn_start_instance (PostgreSQL)" {
+    :блокировка строки пользователя;
+    :пользователь не active - GR003 (409)\nчисло GPU вне 1..8 - GR005 (422);
+    :дата-центр, шаблон, том: GR004 (404),\nчужой ДЦ у тома GR005 (422), том занят GR003 (409);
+    :_fn_quote_instance: цена на момент запуска\nбаланс >= час нового + час работающих;
+    note right: иначе GR002 - 402 INSUFFICIENT_FUNDS
+    :_fn_alloc_gpus: FOR UPDATE SKIP LOCKED\nнет свободных - GR001 (409 NO_CAPACITY);
+    :INSERT instances, instance_gpus [now, inf)\nEXCLUDE: пересечение - 23P01 (409 CONFLICT);
+  }
+  :fn_env_set для каждой переменной (шифрование);
+}
+:COMMIT, 201 Created\nлюбая ошибка выше - ROLLBACK и единый формат ошибки;
+stop
+@enduml

@@ -1,0 +1,58 @@
+@startuml pr24-components
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 12
+skinparam nodesep 20
+skinparam ranksep 34
+skinparam componentStyle uml2
+skinparam dpi 100
+
+title Компоненты GPU Rent и применённые паттерны (название паттерна - в «ёлочках»)
+
+package "Клиент: web/src" as WEB {
+  component "pages/*, components/*\nинтерфейс (View)" as VIEW
+  component "api/hooks.ts: useQuery, useMutation\n<<Observer>> подписка на кэш,\nинвалидация по ключам keys.*" as HOOKS
+  component "main.tsx: QueryClient\nединый кэш и политика повторов" as QC
+  component "api/client.ts: request()\nединый HTTP-клиент" as CLIENT
+}
+
+package "Сервер: api/ и server/src" as FN {
+  component "api/index.ts\n<<Adapter>>: Express-приложение\nкак обработчик (req, res)" as ADAPTER
+  component "server/src/index.ts\nлокальный процесс + listen" as LOCAL
+  component "app.ts: createApp(env)\n<<Factory>>" as FACTORY
+
+  package "Конвейер Express <<Chain of Responsibility>>" as CHAIN {
+    component "request-id, pino" as M1
+    component "helmet, лимит тела,\ncsrfGuard" as M2
+    component "authenticate(config)\n<<Strategy>> (ветвлением):\nAPI-ключ или сессия" as M3
+    component "requireUser, requireAdmin,\nrequireSession, parse (zod)" as M4
+  }
+
+  package "routes/* (Controller)\nрасчёт и SQL рядом" as ROUTES {
+    component "instanceRoutes(config) ...\ntoInstance, toVolume\n<<Data Mapper>>" as R
+  }
+
+  component "db.ts\nпул <<Singleton>> на модуль\nwithUser <<Unit of Work>>\n(Template Method)" as DB
+  component "errors.ts: toAppError\nSQLSTATE -> HTTP" as ERR
+}
+
+database "PostgreSQL\nfn_*, RLS, EXCLUDE,\nadvisory-блокировки" as PG
+
+VIEW --> HOOKS
+HOOKS -right-> QC
+HOOKS --> CLIENT
+CLIENT --> ADAPTER : HTTPS, /api/*
+ADAPTER --> FACTORY : createApp()
+LOCAL --> FACTORY : createApp()
+FACTORY --> M1
+M1 -right-> M2
+M2 -right-> M3
+M3 -right-> M4
+M4 --> R
+R --> DB
+DB --> PG
+R ..> ERR : исключение
+@enduml

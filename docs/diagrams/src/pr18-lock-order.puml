@@ -1,0 +1,31 @@
+@startuml pr18-lock-order
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam sequenceMessageAlign left
+skinparam maxMessageSize 220
+skinparam dpi 100
+hide footbox
+
+title Взаимоблокировка в томах: порядок блокировок до и после исправления
+
+participant "A: POST /volumes/:id/extend" as A
+database "PostgreSQL" as DB
+participant "B: POST /volumes" as B
+
+== До исправления (A берёт строку пользователя раньше advisory-блокировки) ==
+B -> DB : pg_advisory_xact_lock('volumes:ID')  - получена
+A -> DB : fn_bill_current_user: users FOR UPDATE  - получена
+A -> DB : pg_advisory_xact_lock('volumes:ID')  - ждёт B
+B -> DB : INSERT INTO volumes: проверка внешнего ключа\nберёт KEY SHARE на строке users  - ждёт A
+DB --> B : 40P01 deadlock detected (одна из транзакций)
+note over DB : сервер отвечает 409 CONFLICT,\nно запрос, не заслуживавший отказа, потерян
+
+== После исправления (во всех маршрутах порядок один: advisory, затем строка) ==
+B -> DB : advisory 'volumes:ID'  - получена
+A -> DB : advisory 'volumes:ID'  - ждёт B
+B -> DB : INSERT INTO volumes (строка users доступна), COMMIT
+DB --> A : advisory получена; fn_bill_current_user; extend; COMMIT
+note over A, B : обе операции успешны: 200 и 201
+@enduml

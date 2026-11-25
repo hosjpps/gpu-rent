@@ -1,0 +1,49 @@
+@startuml pr20-login-sequence
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 12
+skinparam sequenceMessageAlign left
+skinparam maxMessageSize 420
+skinparam dpi 100
+hide footbox
+autonumber
+
+title Вход пользователя и последующий запрос с cookie сессии
+
+actor "Браузер" as B
+participant "Express:\nконвейер и /api/auth" as A
+database "PostgreSQL" as DB
+
+B -> A : POST /api/auth/login {email, password},\nX-Requested-With: fetch, Origin
+A -> A : csrfGuard; zod .strict(): email в нижнем регистре
+loop три счётчика по очереди, окно 15 минут
+  A -> DB : fn_auth_throttle_hit(login_ip / login_email_ip / login_email)
+  DB --> A : 0 или число секунд ожидания
+end
+alt лимит исчерпан
+  A --> B : 429, Retry-After
+else можно проверять
+  A -> DB : fn_web_user_by_email(email)
+  DB --> A : хэш пароля, статус (или пусто)
+  A -> A : bcrypt.compare(пароль, хэш или заглушка)
+  alt неверно, нет такого email
+    A --> B : 401 INVALID_CREDENTIALS (один ответ на оба случая)
+  else заблокирован
+    A --> B : 403 USER_BLOCKED
+  else успех
+    A -> DB : fn_auth_throttle_clear(login_email_ip, login_email)
+    A -> DB : токен = 32 случайных байта; fn_session_create(user_id, SHA-256(токен), 7 суток)
+    A --> B : 200 {user}, Set-Cookie: __Host-sid=токен;\nHttpOnly; Secure; SameSite=Lax; Path=/
+  end
+end
+
+== Следующий запрос ==
+
+B -> A : GET /api/instances, Cookie: __Host-sid=токен
+A -> DB : fn_session_resolve(SHA-256(токен), 7 суток, 600)
+DB --> A : пользователь, роль, статус (или пусто)
+A -> DB : requireUser (нет сессии 401, блок 403); BEGIN; set_config(app.user_id,\napp.user_role); запросы под RLS; COMMIT
+A --> B : 200 только свои строки, Cache-Control: private, no-store
+
+@enduml

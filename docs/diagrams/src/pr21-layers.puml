@@ -1,0 +1,42 @@
+@startuml pr21-layers
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam packageStyle rectangle
+skinparam ArrowFontSize 12
+skinparam nodesep 24
+skinparam ranksep 34
+skinparam componentStyle uml2
+skinparam dpi 100
+
+title Слои интеграции клиента с API (web/src)
+
+package "Интерфейс" as UI {
+  component "pages/*, components/*\nформы, таблицы, диалоги" as P
+  component "lib/validation.ts, lib/format.ts, lib/cost.ts\nпроверки полей, деньги, даты, подсказка стоимости" as L
+  component "QueryState, ErrorNote\nзагрузка, ошибка, повтор" as E
+}
+
+package "Состояние сервера (TanStack Query 5)" as ST {
+  component "api/hooks.ts\nuseQuery, useInfiniteQuery, useMutation;\nключи keys.*, опрос, инвалидация" as H
+  component "main.tsx\nQueryCache/MutationCache:\n401 -> перепроверка /auth/me;\nповтор только сетевых сбоев и 5xx" as QC
+}
+
+package "Транспорт" as TR {
+  component "api/client.ts\nrequest(): fetch, X-Requested-With,\ncredentials, ApiError" as C
+  component "api/types.ts\nтипы ответов (деньги - строки)" as T
+}
+
+node "Express, /api/*\nopenapi.yaml" as S
+
+P --> H : хуки
+P --> L
+P --> E
+E ..> C : ApiError (status, code, details)
+H --> C : api.get / post / del
+H ..> T
+QC ..> H
+C --> S : HTTPS, JSON, cookie __Host-sid
+S ..> C : JSON или\n{error:{code,message,details}}
+@enduml

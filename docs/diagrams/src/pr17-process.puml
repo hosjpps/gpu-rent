@@ -1,0 +1,27 @@
+@startuml pr17-process
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam roundcorner 6
+skinparam dpi 100
+skinparam nodesep 25
+skinparam ranksep 30
+left to right direction
+
+title Процесс разработки схемы БД и проверки каждого шага
+
+rectangle "1. Требования\nFR/NFR, инварианты,\nгорячие запросы" as R
+rectangle "2. ER-модель\nтаблицы, ключи,\nнормализация" as ER
+rectangle "3. Миграции 0001–0014\nCHECK, EXCLUDE, RLS,\nтриггеры, функции" as M
+rectangle "4. SQL-тесты\n15 файлов, 554 проверки,\nоткат транзакции" as T
+rectangle "5. Сид и бенчмарки\n1,18 млн записей,\nEXPLAIN (ANALYZE, BUFFERS)" as B
+rectangle "6. Индексы,\nсекции, витрина" as O
+
+R --> ER
+ER --> M
+M --> T
+T --> B
+B --> O
+O --> M : новая миграция
+@enduml

@@ -1,0 +1,146 @@
+@startuml pr17-er-core
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam dpi 100
+skinparam nodesep 30
+skinparam ranksep 45
+hide circle
+
+title Компактная ER-схема GPU Rent: 16 таблиц из 22 (PK, FK, UK, * — NOT NULL)\nопущены storage_prices, instance_env_vars, sessions, auth_attempts, email_tokens, billing_runs
+
+entity "users" as users {
+  * id : bigint <<PK>>
+  --
+  * email : citext <<UK>>
+  * role, status
+  * balance : numeric(14,4)
+}
+
+entity "payments" as payments {
+  * id : bigint <<PK>>
+  --
+  * user_id <<FK>>
+  * provider_payment_id <<UK>>
+  * amount : numeric(14,2)
+}
+
+entity "transactions" as transactions {
+  * id : bigint <<PK>>
+  --
+  * user_id <<FK>>
+  * type, amount : numeric(14,4)
+  payment_id <<FK>>
+  usage_id, usage_period_start <<FK>>
+}
+
+entity "usage_records" as usage_records {
+  * id, period_start <<PK>>
+  --
+  * user_id <<FK>>
+  instance_id | volume_id <<FK>>
+  * quantity, amount
+}
+
+entity "volumes" as volumes {
+  * id : bigint <<PK>>
+  --
+  * user_id, datacenter_id <<FK>>
+  * size_gb : 10..10000
+}
+
+entity "instances" as instances {
+  * id : uuid <<PK>>
+  --
+  * user_id, node_id, template_id <<FK>>
+  volume_id, ssh_key_id <<FK>>
+  * price_per_hour_snapshot
+  * status : instance_status
+}
+
+entity "instance_gpus" as instance_gpus {
+  * id : bigint <<PK>>
+  --
+  * instance_id, gpu_id <<FK>>
+  * allocated_during : tstzrange
+  EXCLUDE (gpu_id =, период &&)
+}
+
+entity "gpus" as gpus {
+  * id : bigint <<PK>>
+  --
+  * node_id, gpu_model_id <<FK>>
+  UK (node_id, slot_index)
+}
+
+entity "nodes" as nodes {
+  * id : bigint <<PK>>
+  --
+  * datacenter_id <<FK>>
+}
+
+entity "datacenters" as datacenters {
+  * id : bigint <<PK>>
+  --
+  * code : text <<UK>>
+}
+
+entity "gpu_models" as gpu_models {
+  * id : bigint <<PK>>
+  --
+  * name : text <<UK>>
+}
+
+entity "gpu_prices" as gpu_prices {
+  * id : bigint <<PK>>
+  --
+  * datacenter_id, gpu_model_id <<FK>>
+  * valid_during : tstzrange
+  EXCLUDE (ДЦ, модель, тариф, период &&)
+}
+
+entity "templates" as templates {
+  * id : bigint <<PK>>
+  --
+  owner_id <<FK>>
+  * docker_image
+}
+
+entity "ssh_keys / api_keys" as keys {
+  * id : bigint <<PK>>
+  --
+  * user_id <<FK>>
+  * fingerprint | key_hash <<UK>>
+}
+
+entity "audit_log" as audit {
+  * id : bigint <<PK>>
+  --
+  actor_user_id <<FK>>
+  * details : jsonb
+}
+
+users ||--o{ payments
+users ||--o{ transactions
+users ||--o{ volumes
+users ||--o{ instances
+users ||--o{ keys
+users |o--o{ audit
+users |o--o{ templates
+payments |o--o| transactions
+usage_records |o--o| transactions
+instances |o--o{ usage_records
+volumes |o--o{ usage_records
+volumes |o--o| instances
+instances ||--o{ instance_gpus
+gpus ||--o{ instance_gpus
+nodes ||--o{ gpus
+nodes ||--o{ instances
+datacenters ||--o{ nodes
+datacenters ||--o{ gpu_prices
+datacenters ||--o{ volumes
+gpu_models ||--o{ gpus
+gpu_models ||--o{ gpu_prices
+templates ||--o{ instances
+@enduml

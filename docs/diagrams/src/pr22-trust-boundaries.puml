@@ -1,0 +1,36 @@
+@startuml pr22-trust-boundaries
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam roundcorner 6
+skinparam ArrowFontSize 12
+skinparam nodesep 25
+skinparam ranksep 40
+skinparam dpi 100
+
+title Потоки данных и границы доверия GPU Rent\nбуквы у стрелок — категории STRIDE, номера — строки таблицы 2
+
+actor "Клиент (браузер)" as B
+actor "Скрипт клиента\n(API-ключ)" as S
+actor "Платёжный шлюз" as G
+actor "Vercel Cron" as C
+
+rectangle "Граница 1. Vercel, fra1: HTTPS, CDN, функция Node.js" as V {
+  rectangle "Статика и заголовки\nCSP, HSTS, nosniff,\nX-Frame-Options" as ST
+  rectangle "Express\nhelmet, лимит тела 32 КБ, csrfGuard,\nauthenticate, zod .strict(),\nлимиты попыток, логи без секретов" as EX
+  rectangle "Переменные окружения (sensitive)\nENC_KEY, WEBHOOK_SECRET,\nCRON_SECRET, DATABASE_URL" as ENV
+}
+
+rectangle "Граница 2. Neon, Франкфурт: только TLS" as N {
+  database "PostgreSQL\nроль gpu_rent_web без BYPASSRLS,\nRLS, SECURITY DEFINER,\nappend-only журналы, pgp_sym_encrypt,\nSHA-256 токенов, bcrypt" as DB
+}
+
+B --> ST : I (5)
+B --> EX : cookie __Host-sid\nS T I E (1-3, 6)
+S --> EX : Bearer gr_…\nS I (1, 3)
+G --> EX : подпись HMAC\nS T (8)
+C --> EX : Bearer CRON_SECRET\nS D (9)
+ENV ..> EX : читается при старте
+EX --> DB : BEGIN; set_config(app.user_id,\napp.user_role, app.enc_key); COMMIT\nT I E R D (3, 4, 7, 10, 11)
+
+@enduml
