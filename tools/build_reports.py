@@ -40,7 +40,7 @@ SOFFICE = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
 YEAR = 2026
 STUDENT = "Васин С. А."
 GROUP = "ЭФБО-17-24"
-TEACHER = "Макиевский С. Е."
+TEACHER = "Ковалев А. Л."
 DISCIPLINE = "Создание программного обеспечения"
 
 # Геометрия страницы, мм
